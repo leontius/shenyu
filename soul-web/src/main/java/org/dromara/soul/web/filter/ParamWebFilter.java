@@ -18,6 +18,7 @@
 
 package org.dromara.soul.web.filter;
 
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.dromara.soul.common.constant.Constants;
 import org.dromara.soul.common.constant.DubboParamConstants;
@@ -27,12 +28,14 @@ import org.dromara.soul.common.result.SoulResult;
 import org.dromara.soul.common.utils.ByteBuffUtils;
 import org.dromara.soul.common.utils.GSONUtils;
 import org.dromara.soul.web.request.RequestDTO;
+import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilterChain;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.Map;
@@ -44,6 +47,7 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * @author xiaoyu(Myth)
  */
+@Slf4j
 public class ParamWebFilter extends AbstractWebFilter {
 
     @Override
@@ -78,14 +82,23 @@ public class ParamWebFilter extends AbstractWebFilter {
         if (Objects.isNull(rpcTypeEnum)) {
             return false;
         }
-        //如果是dubbo的话
+
+        // 如果是dubbo的话
         if (Objects.equals(rpcTypeEnum.getName(), RpcTypeEnum.DUBBO.getName())) {
-            AtomicReference<String> json = new AtomicReference<>("");
-            DataBufferUtils.join(exchange.getRequest().getBody()).map(dataBuffer -> {
-                json.set(ByteBuffUtils.byteBufferToString(dataBuffer.asByteBuffer()));
-                return Mono.empty();
-            }).subscribe();
-            final Map<String, Object> paramMap = GSONUtils.getInstance().toObjectMap(json.get());
+            Flux<DataBuffer> body = exchange.getRequest().getBody();
+            // used for cache request body
+            AtomicReference<String> bodyCache = new AtomicReference<>("");
+
+            // Cache request
+            body.subscribe(dataBuffer -> {
+                String stringBuffer = ByteBuffUtils.byteBufferToString(dataBuffer.asByteBuffer());
+                DataBufferUtils.release(dataBuffer);
+                bodyCache.set(stringBuffer);
+            });
+
+            log.debug(bodyCache.toString());
+
+            final Map<String, Object> paramMap = GSONUtils.getInstance().toObjectMap(bodyCache.toString());
             if (paramMap.containsKey(DubboParamConstants.INTERFACE_NAME)
                     && paramMap.containsKey(DubboParamConstants.METHOD)) {
                 exchange.getAttributes().put(Constants.DUBBO_RPC_PARAMS, paramMap);
