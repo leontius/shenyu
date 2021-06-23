@@ -140,7 +140,6 @@
         <dependency>
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>
-            <version>5.1.47</version>
         </dependency>
 
         <dependency>
@@ -161,7 +160,7 @@
         <dependency>
             <groupId>io.etcd</groupId>
             <artifactId>jetcd-core</artifactId>
-            <version>0.5.0</version>
+            <version>${jetcd-core.version}</version>
         </dependency>
 
         <dependency>
@@ -237,7 +236,7 @@
         <dependency>
             <groupId>org.aspectj</groupId>
             <artifactId>aspectjweaver</artifactId>
-            <version>1.9.6</version>
+            <version>${aspectjweaver.version}</version>
         </dependency>
     </dependencies>
 
@@ -247,6 +246,7 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring-boot.version}</version>
                 <configuration>
                     <mainClass>org.apache.shenyu.admin.ShenyuAdminBootstrap</mainClass>
                     <executable>true</executable>
@@ -254,7 +254,7 @@
                 <executions>
                     <execution>
                         <goals>
-                            <goal>build-info</goal>
+                            <goal>repackage</goal>
                         </goals>
                     </execution>
                 </executions>
