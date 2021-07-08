@@ -117,7 +117,7 @@ public class ShenyuClientRegisterSpringMVCServiceImpl extends AbstractShenyuClie
     public void handlerRule(final String selectorId, final MetaDataRegisterDTO dto, final MetaDataDO exist) {
         ruleService.register(registerRule(selectorId, dto.getPath(), PluginEnum.DIVIDE.getName(), dto.getRuleName()),
                 dto.getRuleName(),
-                Objects.isNull(exist));
+                false);
     }
 
     private void registerContextPathPlugin(final String contextPath) {
@@ -127,7 +127,7 @@ public class ShenyuClientRegisterSpringMVCServiceImpl extends AbstractShenyuClie
             String contextPathSelectorId = registerContextPathSelector(contextPath, name);
             ruleService.register(registerRule(contextPathSelectorId, contextPath + "/**", PluginEnum.CONTEXT_PATH.getName(), name),
                     name,
-                    true);
+                    false);
         }
     }
 
