@@ -163,6 +163,18 @@
             <groupId>com.alipay.sofa</groupId>
             <artifactId>sofa-rpc-all</artifactId>
             <version>5.7.6</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>net.jcip</groupId>
+                    <artifactId>jcip-annotations</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.shenyu</groupId>
+            <artifactId>shenyu-spring-boot-starter-plugin-jwt</artifactId>
+            <version>${project.version}</version>
         </dependency>
      <!--   <dependency>
             <groupId>org.apache.curator</groupId>
@@ -338,6 +350,13 @@
         </dependency>
         <!--shenyu debug plugin end-->
 
+        <!--shenyu data sync start use consul-->
+        <dependency>
+            <groupId>org.apache.shenyu</groupId>
+            <artifactId>shenyu-spring-boot-starter-sync-data-consul</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- shenyu modify response plugin start-->
         <dependency>
             <groupId>org.apache.shenyu</groupId>
@@ -353,14 +372,6 @@
             <version>${project.version}</version>
         </dependency>
         <!-- shenyu response plugin end-->
-
-        <!--shenyu request plugin start-->
-        <dependency>
-            <groupId>org.apache.shenyu</groupId>
-            <artifactId>shenyu-spring-boot-starter-plugin-request</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <!--shenyu request plugin end-->
 
         <!--shenyu param mapping plugin start-->
         <dependency>
@@ -378,17 +389,6 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <version>${spring-boot.version}</version>
-                <configuration>
-                    <mainClass>org.apache.shenyu.bootstrap.ShenyuBootstrapApplication</mainClass>
-                    <executable>true</executable>
-                </configuration>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>repackage</goal>
-                        </goals>
-                    </execution>
-                </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

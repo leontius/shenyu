@@ -46,16 +46,19 @@ public class RewritePlugin extends AbstractShenyuPlugin {
         String handle = rule.getHandle();
         final RewriteHandle rewriteHandle = RewritePluginDataHandler.CACHED_HANDLE.get()
                 .obtainHandle(CacheKeyUtils.INST.getKey(rule));
-        if (Objects.isNull(rewriteHandle) || StringUtils.isBlank(rewriteHandle.getRewriteURI())) {
+        if (Objects.isNull(rewriteHandle)) {
             log.error("uri rewrite rule can not configuration：{}", handle);
             return chain.execute(exchange);
         }
-
-        String rewriteURI = rewriteHandle.getRewriteURI();
-        if (StringUtils.isNotBlank(rewriteHandle.getRegex()) && Objects.nonNull(rewriteHandle.getReplace())) {
-            rewriteURI = rewriteURI.replaceAll(rewriteHandle.getRegex(), rewriteHandle.getReplace());
+        ShenyuContext shenyuContext = exchange.getAttribute(Constants.CONTEXT);
+        String rewriteUri = exchange.getRequest().getURI().getPath();
+        if (StringUtils.isNotBlank(shenyuContext.getRealUrl())) {
+            rewriteUri = shenyuContext.getRealUrl();
         }
-        exchange.getAttributes().put(Constants.REWRITE_URI, rewriteURI);
+        if (StringUtils.isNoneBlank(rewriteHandle.getRegex(), rewriteHandle.getReplace())) {
+            rewriteUri = rewriteUri.replaceAll(rewriteHandle.getRegex(), rewriteHandle.getReplace());
+        }
+        exchange.getAttributes().put(Constants.REWRITE_URI, rewriteUri);
         return chain.execute(exchange);
     }
 
