@@ -17,7 +17,6 @@
 
 package org.apache.shenyu.plugin.context.path;
 
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.shenyu.common.constant.Constants;
 import org.apache.shenyu.common.dto.RuleData;
@@ -27,9 +26,14 @@ import org.apache.shenyu.common.enums.PluginEnum;
 import org.apache.shenyu.common.enums.RpcTypeEnum;
 import org.apache.shenyu.plugin.api.ShenyuPluginChain;
 import org.apache.shenyu.plugin.api.context.ShenyuContext;
+import org.apache.shenyu.plugin.api.result.ShenyuResultEnum;
+import org.apache.shenyu.plugin.api.result.ShenyuResultWrap;
+import org.apache.shenyu.plugin.api.utils.WebFluxResultUtils;
 import org.apache.shenyu.plugin.base.AbstractShenyuPlugin;
 import org.apache.shenyu.plugin.base.utils.CacheKeyUtils;
 import org.apache.shenyu.plugin.context.path.handler.ContextPathPluginDataHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
@@ -38,8 +42,9 @@ import java.util.Objects;
 /**
  * ContextPath Plugin.
  */
-@Slf4j
 public class ContextPathPlugin extends AbstractShenyuPlugin {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ContextPathPlugin.class);
 
     @Override
     protected Mono<Void> doExecute(final ServerWebExchange exchange, final ShenyuPluginChain chain, final SelectorData selector, final RuleData rule) {
@@ -47,8 +52,18 @@ public class ContextPathPlugin extends AbstractShenyuPlugin {
         assert shenyuContext != null;
         ContextMappingHandle contextMappingHandle = ContextPathPluginDataHandler.CACHED_HANDLE.get().obtainHandle(CacheKeyUtils.INST.getKey(rule));
         if (Objects.isNull(contextMappingHandle)) {
-            log.error("context path rule configuration is null ：{}", rule);
+            LOG.error("context path rule configuration is null ：{}", rule);
             return chain.execute(exchange);
+        }
+        if (StringUtils.isNoneBlank(contextMappingHandle.getContextPath())) {
+            if (!shenyuContext.getPath().startsWith(contextMappingHandle.getContextPath())) {
+                LOG.error("the context path '{}' is invalid.", contextMappingHandle.getContextPath());
+                Object error = ShenyuResultWrap.error(ShenyuResultEnum.CONTEXT_PATH_ERROR.getCode(),
+                        String.format("%s [invalid context path:'%s']",
+                                ShenyuResultEnum.CONTEXT_PATH_ERROR.getMsg(),
+                                contextMappingHandle.getContextPath()), null);
+                return WebFluxResultUtils.result(exchange, error);
+            }
         }
         buildContextPath(shenyuContext, contextMappingHandle);
         return chain.execute(exchange);
@@ -65,7 +80,7 @@ public class ContextPathPlugin extends AbstractShenyuPlugin {
     }
 
     @Override
-    public Boolean skip(final ServerWebExchange exchange) {
+    public boolean skip(final ServerWebExchange exchange) {
         ShenyuContext body = exchange.getAttribute(Constants.CONTEXT);
         assert body != null;
         String rpcType = body.getRpcType();
