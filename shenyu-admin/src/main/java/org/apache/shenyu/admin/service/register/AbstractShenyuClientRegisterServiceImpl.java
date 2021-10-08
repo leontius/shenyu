@@ -23,7 +23,7 @@ import org.apache.shenyu.admin.model.dto.RuleDTO;
 import org.apache.shenyu.admin.model.dto.SelectorConditionDTO;
 import org.apache.shenyu.admin.model.dto.SelectorDTO;
 import org.apache.shenyu.admin.model.entity.MetaDataDO;
-import org.apache.shenyu.common.dto.convert.DivideUpstream;
+import org.apache.shenyu.common.dto.convert.selector.DivideUpstream;
 import org.apache.shenyu.common.dto.convert.rule.RuleHandle;
 import org.apache.shenyu.common.dto.convert.rule.RuleHandleFactory;
 import org.apache.shenyu.common.enums.MatchModeEnum;
@@ -67,7 +67,7 @@ public abstract class AbstractShenyuClientRegisterServiceImpl implements ShenyuC
     protected abstract void handlerRule(String selectorId, MetaDataRegisterDTO metaDataDTO, MetaDataDO exist);
 
     @Override
-    public String registerURI(final String contextPath, final List<String> uriList) {
+    public String registerUri(final String contextPath, final List<String> uriList) {
         return null;
     }
 
