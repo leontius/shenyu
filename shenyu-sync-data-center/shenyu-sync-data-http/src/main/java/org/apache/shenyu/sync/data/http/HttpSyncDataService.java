@@ -19,16 +19,15 @@ package org.apache.shenyu.sync.data.http;
 
 import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
-import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.shenyu.common.concurrent.ShenyuThreadFactory;
-import org.apache.shenyu.common.constant.HttpConstants;
+import org.apache.shenyu.common.constant.Constants;
 import org.apache.shenyu.common.dto.ConfigData;
 import org.apache.shenyu.common.enums.ConfigGroupEnum;
 import org.apache.shenyu.common.exception.ShenyuException;
+import org.apache.shenyu.common.utils.GsonUtils;
 import org.apache.shenyu.common.utils.ThreadUtils;
 import org.apache.shenyu.sync.data.api.AuthDataSubscriber;
 import org.apache.shenyu.sync.data.api.MetaDataSubscriber;
@@ -40,16 +39,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.OkHttp3ClientHttpRequestFactory;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
-import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -59,8 +58,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * HTTP long polling implementation.
  */
-@SuppressWarnings("all")
-public class HttpSyncDataService implements SyncDataService, AutoCloseable {
+public class HttpSyncDataService implements SyncDataService {
 
     /**
      * logger.
@@ -69,40 +67,30 @@ public class HttpSyncDataService implements SyncDataService, AutoCloseable {
 
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
 
-    private static final Gson GSON = new Gson();
-
-    /**
-     * default: 10s.
-     */
-    private Duration connectionTimeout = Duration.ofSeconds(10);
-
     /**
      * only use for http long polling.
      */
-    private RestTemplate httpClient;
+    private final RestTemplate restTemplate;
 
     private ExecutorService executor;
 
-    private HttpConfig httpConfig;
+    private final List<String> serverList;
 
-    private List<String> serverList;
+    private final DataRefreshFactory factory;
 
-    private DataRefreshFactory factory;
+    private final AccessTokenManager accessTokenManager;
 
-    public HttpSyncDataService(final HttpConfig httpConfig, final PluginDataSubscriber pluginDataSubscriber,
-                               final List<MetaDataSubscriber> metaDataSubscribers, final List<AuthDataSubscriber> authDataSubscribers) {
+    public HttpSyncDataService(final HttpConfig httpConfig,
+                               final PluginDataSubscriber pluginDataSubscriber,
+                               final RestTemplate restTemplate,
+                               final List<MetaDataSubscriber> metaDataSubscribers,
+                               final List<AuthDataSubscriber> authDataSubscribers,
+                               final AccessTokenManager accessTokenManager) {
+        this.accessTokenManager = accessTokenManager;
         this.factory = new DataRefreshFactory(pluginDataSubscriber, metaDataSubscribers, authDataSubscribers);
-        this.httpConfig = httpConfig;
         this.serverList = Lists.newArrayList(Splitter.on(",").split(httpConfig.getUrl()));
-        this.httpClient = createRestTemplate();
+        this.restTemplate = restTemplate;
         this.start();
-    }
-
-    private RestTemplate createRestTemplate() {
-        OkHttp3ClientHttpRequestFactory factory = new OkHttp3ClientHttpRequestFactory();
-        factory.setConnectTimeout((int) this.connectionTimeout.toMillis());
-        factory.setReadTimeout((int) HttpConstants.CLIENT_POLLING_READ_TIMEOUT);
-        return new RestTemplate(factory);
     }
 
     private void start() {
@@ -142,11 +130,14 @@ public class HttpSyncDataService implements SyncDataService, AutoCloseable {
         for (ConfigGroupEnum groupKey : groups) {
             params.append("groupKeys").append("=").append(groupKey.name()).append("&");
         }
-        String url = server + "/configs/fetch?" + StringUtils.removeEnd(params.toString(), "&");
+        String url = server + Constants.SHENYU_ADMIN_PATH_CONFIGS_FETCH + "?" + StringUtils.removeEnd(params.toString(), "&");
         LOG.info("request configs: [{}]", url);
-        String json = null;
+        String json;
         try {
-            json = this.httpClient.getForObject(url, String.class);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(Constants.X_ACCESS_TOKEN, this.accessTokenManager.getAccessToken());
+            HttpEntity<String> httpEntity = new HttpEntity<>(headers);
+            json = this.restTemplate.exchange(url, HttpMethod.GET, httpEntity, String.class).getBody();
         } catch (RestClientException e) {
             String message = String.format("fetch config fail from server[%s], %s", url, e.getMessage());
             LOG.warn(message);
@@ -155,13 +146,15 @@ public class HttpSyncDataService implements SyncDataService, AutoCloseable {
         // update local cache
         boolean updated = this.updateCacheWithJson(json);
         if (updated) {
-            LOG.info("get latest configs: [{}]", json);
+            LOG.debug("get latest configs: [{}]", json);
             return;
         }
         // not updated. it is likely that the current config server has not been updated yet. wait a moment.
         LOG.info("The config of the server[{}] has not been updated or is out of date. Wait for 30s to listen for changes again.", server);
         ThreadUtils.sleep(TimeUnit.SECONDS, 30);
     }
+
+
 
     /**
      * update local cache.
@@ -170,13 +163,11 @@ public class HttpSyncDataService implements SyncDataService, AutoCloseable {
      * @return true: the local cache was updated. false: not updated.
      */
     private boolean updateCacheWithJson(final String json) {
-        JsonObject jsonObject = GSON.fromJson(json, JsonObject.class);
-        JsonObject data = jsonObject.getAsJsonObject("data");
+        JsonObject jsonObject = GsonUtils.getGson().fromJson(json, JsonObject.class);
         // if the config cache will be updated?
-        return factory.executor(data);
+        return factory.executor(jsonObject.getAsJsonObject("data"));
     }
 
-    @SuppressWarnings("unchecked")
     private void doLongPolling(final String server) {
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>(8);
         for (ConfigGroupEnum group : ConfigGroupEnum.values()) {
@@ -188,32 +179,33 @@ public class HttpSyncDataService implements SyncDataService, AutoCloseable {
         }
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-        HttpEntity httpEntity = new HttpEntity(params, headers);
-        String listenerUrl = server + "/configs/listener";
-        LOG.debug("request listener configs: [{}]", listenerUrl);
-        JsonArray groupJson = null;
+        headers.set(Constants.X_ACCESS_TOKEN, this.accessTokenManager.getAccessToken());
+        HttpEntity<MultiValueMap<String, String>> httpEntity = new HttpEntity<>(params, headers);
+        String listenerUrl = server + Constants.SHENYU_ADMIN_PATH_CONFIGS_LISTENER;
+
+        JsonArray groupJson;
         try {
-            String json = this.httpClient.postForEntity(listenerUrl, httpEntity, String.class).getBody();
-            LOG.debug("listener result: [{}]", json);
-            groupJson = GSON.fromJson(json, JsonObject.class).getAsJsonArray("data");
+            String json = this.restTemplate.postForEntity(listenerUrl, httpEntity, String.class).getBody();
+            LOG.info("listener result: [{}]", json);
+            JsonObject responseFromServer = GsonUtils.getGson().fromJson(json, JsonObject.class);
+            groupJson = responseFromServer.getAsJsonArray("data");
         } catch (RestClientException e) {
             String message = String.format("listener configs fail, server:[%s], %s", server, e.getMessage());
             throw new ShenyuException(message, e);
         }
-        if (groupJson != null) {
+
+        if (Objects.nonNull(groupJson) && groupJson.size() > 0) {
             // fetch group configuration async.
-            ConfigGroupEnum[] changedGroups = GSON.fromJson(groupJson, ConfigGroupEnum[].class);
-            if (ArrayUtils.isNotEmpty(changedGroups)) {
-                LOG.info("Group config changed: {}", Arrays.toString(changedGroups));
-                this.doFetchGroupConfig(server, changedGroups);
-            }
+            ConfigGroupEnum[] changedGroups = GsonUtils.getGson().fromJson(groupJson, ConfigGroupEnum[].class);
+            LOG.info("Group config changed: {}", Arrays.toString(changedGroups));
+            this.doFetchGroupConfig(server, changedGroups);
         }
     }
 
     @Override
-    public void close() throws Exception {
+    public void close() {
         RUNNING.set(false);
-        if (executor != null) {
+        if (Objects.nonNull(executor)) {
             executor.shutdownNow();
             // help gc
             executor = null;
@@ -222,9 +214,7 @@ public class HttpSyncDataService implements SyncDataService, AutoCloseable {
 
     class HttpLongPollingTask implements Runnable {
 
-        private String server;
-
-        private final int retryTimes = 3;
+        private final String server;
 
         HttpLongPollingTask(final String server) {
             this.server = server;
@@ -233,8 +223,10 @@ public class HttpSyncDataService implements SyncDataService, AutoCloseable {
         @Override
         public void run() {
             while (RUNNING.get()) {
+                int retryTimes = 3;
                 for (int time = 1; time <= retryTimes; time++) {
                     try {
+                        //do long polling.
                         doLongPolling(server);
                     } catch (Exception e) {
                         // print warnning LOG.

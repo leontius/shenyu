@@ -62,6 +62,14 @@ public interface AuthParamMapper {
     List<AuthParamDO> findByAuthId(String authId);
 
     /**
+     * Find all the {@link AuthParamDO} by authIdList.
+     *
+     * @param authIdList  batch auth id
+     * @return the list
+     */
+    List<AuthParamDO> findByAuthIdList(@Param("authIdList") List<String> authIdList);
+
+    /**
      * Find by auth id and app name auth param do.
      *
      * @param authId  the auth id
@@ -77,4 +85,12 @@ public interface AuthParamMapper {
      * @return the int
      */
     int deleteByAuthId(String authId);
+
+    /**
+     * Delete by auth id int.
+     *
+     * @param authIds the auth ids
+     * @return the int
+     */
+    int deleteByAuthIds(List<String> authIds);
 }

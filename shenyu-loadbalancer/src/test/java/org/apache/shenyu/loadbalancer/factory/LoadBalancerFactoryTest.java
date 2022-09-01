@@ -17,15 +17,17 @@
 
 package org.apache.shenyu.loadbalancer.factory;
 
-import org.apache.shenyu.loadbalancer.entity.Upstream;
-import org.junit.Assert;
-import org.junit.Test;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import org.apache.shenyu.common.enums.LoadBalanceEnum;
+import org.apache.shenyu.loadbalancer.entity.Upstream;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * The type loadBalance utils test.
@@ -45,12 +47,12 @@ public final class LoadBalancerFactoryTest {
                                 .build())
                         .collect(Collectors.toList());
         Map<String, Integer> countMap = new HashMap<>();
-        for (int i = 0; i < 120; i++) {
-            Upstream result = LoadBalancerFactory.selector(upstreamList, "roundRobin", "");
+        IntStream.range(0, 120).forEach(i -> {
+            Upstream result = LoadBalancerFactory.selector(upstreamList, LoadBalanceEnum.ROUND_ROBIN.getName(), "");
             int count = countMap.getOrDefault(result.getUrl(), 0);
             countMap.put(result.getUrl(), ++count);
-        }
-        Assert.assertEquals(12, countMap.get("upstream-10").intValue());
+        });
+        assertEquals(12, countMap.get("upstream-10").intValue());
     }
 
     @Test
@@ -63,12 +65,12 @@ public final class LoadBalancerFactoryTest {
                                 .build())
                         .collect(Collectors.toList());
         Map<String, Integer> countMap = new HashMap<>();
-        for (int i = 0; i < 120; i++) {
-            Upstream result = LoadBalancerFactory.selector(upstreamList, "roundRobin", "");
+        IntStream.range(0, 120).forEach(i -> {
+            Upstream result = LoadBalancerFactory.selector(upstreamList, LoadBalanceEnum.ROUND_ROBIN.getName(), "");
             int count = countMap.getOrDefault(result.getUrl(), 0);
             countMap.put(result.getUrl(), ++count);
-        }
-        Assert.assertEquals(12, countMap.get("upstream-10").intValue());
+        });
+        assertEquals(12, countMap.get("upstream-10").intValue());
     }
 
     @Test
@@ -81,11 +83,11 @@ public final class LoadBalancerFactoryTest {
                                 .build())
                         .collect(Collectors.toList());
         Map<String, Integer> countMap = new HashMap<>();
-        for (int i = 0; i < 120; i++) {
-            Upstream result = LoadBalancerFactory.selector(upstreamList, "roundRobin", "");
+        IntStream.range(0, 120).forEach(i -> {
+            Upstream result = LoadBalancerFactory.selector(upstreamList, LoadBalanceEnum.ROUND_ROBIN.getName(), "");
             int count = countMap.getOrDefault(result.getUrl(), 0);
             countMap.put(result.getUrl(), ++count);
-        }
-        Assert.assertEquals(12, countMap.get("upstream-10").intValue());
+        });
+        assertEquals(12, countMap.get("upstream-10").intValue());
     }
 }

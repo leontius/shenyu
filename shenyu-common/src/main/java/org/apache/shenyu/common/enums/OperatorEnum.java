@@ -17,8 +17,6 @@
 
 package org.apache.shenyu.common.enums;
 
-import org.apache.shenyu.common.exception.ShenyuException;
-
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -59,14 +57,14 @@ public enum OperatorEnum {
     CONTAINS("contains", true),
 
     /**
-     * SpEL enum.
+     * Starts with operator enum.
      */
-    SPEL("SpEL", true),
+    STARTS_WITH("startsWith", true),
 
     /**
-     * Groovy enum.
+     * Ends with operator enum.
      */
-    GROOVY("Groovy", true),
+    ENDS_WITH("endsWith", true),
 
     /**
      * Time before operator enum.
@@ -74,9 +72,19 @@ public enum OperatorEnum {
     TIME_BEFORE("TimeBefore", true),
 
     /**
+     * Exclude operator enum.
+     */
+    EXCLUDE("exclude", true),
+
+    /**
      * Time after operator enum.
      */
-    TIME_AFTER("TimeAfter", true);
+    TIME_AFTER("TimeAfter", true),
+    
+    /**
+     * Path patter operator enum.
+     */
+    PATH_PATTERN("pathPattern", true);
 
     private final String alias;
 
@@ -84,7 +92,8 @@ public enum OperatorEnum {
 
     /**
      * all args constructor.
-     * @param alias alias
+     *
+     * @param alias   alias
      * @param support support
      */
     OperatorEnum(final String alias, final Boolean support) {
@@ -95,7 +104,7 @@ public enum OperatorEnum {
     /**
      * get alias.
      *
-     * @return alias
+     * @return alias alias
      */
     public String getAlias() {
         return alias;
@@ -104,7 +113,7 @@ public enum OperatorEnum {
     /**
      * get support.
      *
-     * @return support
+     * @return support support
      */
     public Boolean getSupport() {
         return support;
@@ -128,6 +137,6 @@ public enum OperatorEnum {
     public static OperatorEnum getOperatorEnumByAlias(final String alias) {
         return Arrays.stream(OperatorEnum.values())
                 .filter(e -> e.getAlias().equals(alias) && e.support).findFirst()
-                .orElseThrow(() -> new ShenyuException(String.format(" this  operator can not support %s ", alias)));
+                .orElse(null);
     }
 }

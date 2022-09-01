@@ -17,16 +17,17 @@
 
 package org.apache.shenyu.plugin.divide.handler;
 
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.shenyu.common.dto.RuleData;
 import org.apache.shenyu.common.dto.SelectorData;
 import org.apache.shenyu.common.dto.convert.selector.DivideUpstream;
 import org.apache.shenyu.common.dto.convert.rule.impl.DivideRuleHandle;
 import org.apache.shenyu.common.enums.PluginEnum;
-import org.apache.shenyu.common.utils.CollectionUtils;
 import org.apache.shenyu.common.utils.GsonUtils;
 import org.apache.shenyu.loadbalancer.cache.UpstreamCacheManager;
 import org.apache.shenyu.loadbalancer.entity.Upstream;
 import org.apache.shenyu.plugin.base.cache.CommonHandleCache;
+import org.apache.shenyu.plugin.base.cache.MetaDataCache;
 import org.apache.shenyu.plugin.base.handler.PluginDataHandler;
 import org.apache.shenyu.plugin.base.utils.BeanHolder;
 import org.apache.shenyu.plugin.base.utils.CacheKeyUtils;
@@ -50,11 +51,15 @@ public class DividePluginDataHandler implements PluginDataHandler {
             return;
         }
         UpstreamCacheManager.getInstance().submit(selectorData.getId(), convertUpstreamList(upstreamList));
+        // the update is also need to clean, but there is no way to
+        // distinguish between crate and update, so it is always clean
+        MetaDataCache.getInstance().clean();
     }
 
     @Override
     public void removeSelector(final SelectorData selectorData) {
         UpstreamCacheManager.getInstance().removeByKey(selectorData.getId());
+        MetaDataCache.getInstance().clean();
     }
 
     @Override
@@ -62,12 +67,16 @@ public class DividePluginDataHandler implements PluginDataHandler {
         Optional.ofNullable(ruleData.getHandle()).ifPresent(s -> {
             DivideRuleHandle divideRuleHandle = GsonUtils.getInstance().fromJson(s, DivideRuleHandle.class);
             CACHED_HANDLE.get().cachedHandle(CacheKeyUtils.INST.getKey(ruleData), divideRuleHandle);
+            // the update is also need to clean, but there is no way to
+            // distinguish between crate and update, so it is always clean
+            MetaDataCache.getInstance().clean();
         });
     }
 
     @Override
     public void removeRule(final RuleData ruleData) {
         Optional.ofNullable(ruleData.getHandle()).ifPresent(s -> CACHED_HANDLE.get().removeHandle(CacheKeyUtils.INST.getKey(ruleData)));
+        MetaDataCache.getInstance().clean();
     }
 
     @Override

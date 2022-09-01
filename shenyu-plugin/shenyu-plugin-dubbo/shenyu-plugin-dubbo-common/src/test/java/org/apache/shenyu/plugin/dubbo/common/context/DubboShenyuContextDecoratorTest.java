@@ -20,16 +20,21 @@ package org.apache.shenyu.plugin.dubbo.common.context;
 import org.apache.shenyu.common.dto.MetaData;
 import org.apache.shenyu.common.enums.RpcTypeEnum;
 import org.apache.shenyu.plugin.api.context.ShenyuContext;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 /**
  * DubboShenyuContextDecorator test.
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public class DubboShenyuContextDecoratorTest {
+
+    private static final String MOCK_ID = "MOCK_ID";
 
     private static final String MOCK_APP_NAME = "mockAppName";
 
@@ -39,7 +44,7 @@ public class DubboShenyuContextDecoratorTest {
 
     private DubboShenyuContextDecorator dubboShenyuContextDecorator;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         this.dubboShenyuContextDecorator = new DubboShenyuContextDecorator();
     }
@@ -47,6 +52,7 @@ public class DubboShenyuContextDecoratorTest {
     @Test
     public void decorator() {
         MetaData metaData = MetaData.builder()
+                .id(MOCK_ID)
                 .appName(MOCK_APP_NAME)
                 .contextPath(MOCK_CONTEXT_PATH)
                 .serviceName(MOCK_SERVICE_NAME)

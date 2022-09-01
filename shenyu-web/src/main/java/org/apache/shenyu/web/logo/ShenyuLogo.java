@@ -33,9 +33,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Order(LoggingApplicationListener.DEFAULT_ORDER + 1)
 public class ShenyuLogo implements ApplicationListener<ApplicationEnvironmentPreparedEvent> {
     
-    /**
-     * logger.
-     */
     private static final Logger LOG = LoggerFactory.getLogger(ShenyuLogo.class);
 
     private static final String SHENYU_LOGO = "\n"
@@ -48,11 +45,11 @@ public class ShenyuLogo implements ApplicationListener<ApplicationEnvironmentPre
         + "                           __/ |      \n"
         + "                          |___/       ";
 
-    private final AtomicBoolean alreadyLog = new AtomicBoolean(false);
+    private static final AtomicBoolean ALREADY_LOG = new AtomicBoolean(false);
 
     @Override
     public void onApplicationEvent(final ApplicationEnvironmentPreparedEvent event) {
-        if (!alreadyLog.compareAndSet(false, true)) {
+        if (!ALREADY_LOG.compareAndSet(false, true)) {
             return;
         }
         LOG.info(buildBannerText());

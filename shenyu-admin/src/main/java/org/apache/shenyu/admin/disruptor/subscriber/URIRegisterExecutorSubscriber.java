@@ -17,15 +17,19 @@
 
 package org.apache.shenyu.admin.disruptor.subscriber;
 
-import org.apache.shenyu.admin.service.register.ShenyuClientRegisterServiceFactory;
-import org.apache.shenyu.common.constant.Constants;
+import com.google.common.collect.Lists;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.shenyu.admin.service.register.ShenyuClientRegisterService;
 import org.apache.shenyu.register.common.dto.URIRegisterDTO;
 import org.apache.shenyu.register.common.subsriber.ExecutorTypeSubscriber;
 import org.apache.shenyu.register.common.type.DataType;
 
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -33,14 +37,14 @@ import java.util.stream.Collectors;
  */
 public class URIRegisterExecutorSubscriber implements ExecutorTypeSubscriber<URIRegisterDTO> {
     
-    private final Map<String, ShenyuClientRegisterServiceFactory> shenyuClientRegisterService;
+    private final Map<String, ShenyuClientRegisterService> shenyuClientRegisterService;
     
     /**
      * Instantiates a new Uri register executor subscriber.
      *
      * @param shenyuClientRegisterService the shenyu client register service
      */
-    public URIRegisterExecutorSubscriber(final Map<String, ShenyuClientRegisterServiceFactory> shenyuClientRegisterService) {
+    public URIRegisterExecutorSubscriber(final Map<String, ShenyuClientRegisterService> shenyuClientRegisterService) {
         this.shenyuClientRegisterService = shenyuClientRegisterService;
     }
     
@@ -51,9 +55,38 @@ public class URIRegisterExecutorSubscriber implements ExecutorTypeSubscriber<URI
     
     @Override
     public void executor(final Collection<URIRegisterDTO> dataList) {
-        Map<String, List<URIRegisterDTO>> listMap = dataList.stream().collect(Collectors.groupingBy(URIRegisterDTO::getContextPath));
-        listMap.forEach((contextPath, dtoList) -> shenyuClientRegisterService.get(Constants.DEFAULT.toLowerCase())
-                .registerUri(contextPath, dtoList.stream()
-                .map(s -> String.join(":", s.getHost(), s.getPort().toString())).collect(Collectors.toList())));
+        if (CollectionUtils.isEmpty(dataList)) {
+            return;
+        }
+        final Map<String, List<URIRegisterDTO>> groupByRpcType = dataList.stream()
+                .filter(data -> StringUtils.isNotBlank(data.getRpcType()))
+                .collect(Collectors.groupingBy(URIRegisterDTO::getRpcType));
+        for (Map.Entry<String, List<URIRegisterDTO>> entry : groupByRpcType.entrySet()) {
+            final String rpcType = entry.getKey();
+            Optional.ofNullable(shenyuClientRegisterService.get(rpcType))
+                    .ifPresent(service -> {
+                        final List<URIRegisterDTO> list = entry.getValue();
+                        Map<String, List<URIRegisterDTO>> listMap = buildData(list);
+                        listMap.forEach(service::registerURI);
+                    });
+        }
+    }
+    
+    private Map<String, List<URIRegisterDTO>> buildData(final Collection<URIRegisterDTO> dataList) {
+        Map<String, List<URIRegisterDTO>> resultMap = new HashMap<>(8);
+        for (URIRegisterDTO dto : dataList) {
+            String contextPath = dto.getContextPath();
+            String key = StringUtils.isNotEmpty(contextPath) ? contextPath : dto.getAppName();
+            if (StringUtils.isNotEmpty(key)) {
+                if (resultMap.containsKey(key)) {
+                    List<URIRegisterDTO> existList = resultMap.get(key);
+                    existList.add(dto);
+                    resultMap.put(key, existList);
+                } else {
+                    resultMap.put(key, Lists.newArrayList(dto));
+                }
+            }
+        }
+        return resultMap;
     }
 }

@@ -18,6 +18,7 @@
 package org.apache.shenyu.examples.sofa.service.impl;
 
 import org.apache.shenyu.client.sofa.common.annotation.ShenyuSofaClient;
+import org.apache.shenyu.examples.common.aop.Log;
 import org.apache.shenyu.examples.sofa.api.entity.SofaSimpleTypeBean;
 import org.apache.shenyu.examples.sofa.api.service.SofaSingleParamService;
 import org.springframework.stereotype.Service;
@@ -31,25 +32,20 @@ import java.util.Random;
 public class SofaSingleParamServiceImpl implements SofaSingleParamService {
 
     @Override
-    @ShenyuSofaClient(path = "/findById", desc = "Find by Id")
+    @ShenyuSofaClient("/findById")
+    @Log
     public SofaSimpleTypeBean findById(final String id) {
-        SofaSimpleTypeBean sofaSimpleTypeBean = new SofaSimpleTypeBean();
-        sofaSimpleTypeBean.setId(id);
-        sofaSimpleTypeBean.setName("hello world shenyu Sofa, findById");
-        return sofaSimpleTypeBean;
+        return new SofaSimpleTypeBean(id, "hello world shenyu Sofa, findById");
     }
 
     @Override
-    @ShenyuSofaClient(path = "/findAll", desc = "Get all data")
+    @ShenyuSofaClient("/findAll")
     public SofaSimpleTypeBean findAll() {
-        SofaSimpleTypeBean sofaSimpleTypeBean = new SofaSimpleTypeBean();
-        sofaSimpleTypeBean.setName("hello world shenyu Sofa , findAll");
-        sofaSimpleTypeBean.setId(String.valueOf(new Random().nextInt()));
-        return sofaSimpleTypeBean;
+        return new SofaSimpleTypeBean(String.valueOf(new Random().nextInt()), "hello world shenyu Sofa , findAll");
     }
 
     @Override
-    @ShenyuSofaClient(path = "/insert", desc = "Insert a row of data")
+    @ShenyuSofaClient("/insert")
     public SofaSimpleTypeBean insert(final SofaSimpleTypeBean sofaSimpleTypeBean) {
         sofaSimpleTypeBean.setName("hello world shenyu Sofa: " + sofaSimpleTypeBean.getName());
         return sofaSimpleTypeBean;

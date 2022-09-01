@@ -18,32 +18,32 @@
 package org.apache.shenyu.plugin.grpc.proto;
 
 import com.google.protobuf.Message;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.Mockito.mock;
 
 /**
  * The Test Case For {@link MessageWriter}.
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
 public class MessageWriterTest {
-    private ShenyuGrpcResponse shenyuGrpcResponse;
-
+    
     private MessageWriter<Message> messageWriter;
 
-    @Before
+    @BeforeEach
     public void setUp() {
-        shenyuGrpcResponse = mock(ShenyuGrpcResponse.class);
+        ShenyuGrpcResponse shenyuGrpcResponse = mock(ShenyuGrpcResponse.class);
         messageWriter = MessageWriter.newInstance(shenyuGrpcResponse);
     }
 
     @Test
     public void onError() {
-        Throwable throwable = mock(Throwable.class);
+        Throwable throwable = new Throwable();
         messageWriter.onError(throwable);
+        
     }
 
     @Test

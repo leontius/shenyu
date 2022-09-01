@@ -17,6 +17,7 @@
 
 package org.apache.shenyu.web.controller;
 
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.RandomUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.shenyu.common.constant.Constants;
@@ -26,13 +27,14 @@ import org.apache.shenyu.common.dto.RuleData;
 import org.apache.shenyu.common.dto.SelectorData;
 import org.apache.shenyu.common.enums.MatchModeEnum;
 import org.apache.shenyu.common.enums.SelectorTypeEnum;
-import org.apache.shenyu.common.utils.CollectionUtils;
 import org.apache.shenyu.common.utils.JsonUtils;
 import org.apache.shenyu.common.utils.UUIDUtils;
 import org.apache.shenyu.plugin.base.cache.BaseDataCache;
+import org.apache.shenyu.plugin.base.cache.MatchDataCache;
 import org.apache.shenyu.sync.data.api.PluginDataSubscriber;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -49,7 +51,7 @@ import java.util.stream.Collectors;
  * The type Plugin controller.
  */
 @RestController
-@RequestMapping("/shenyu")
+@RequestMapping(value = "/shenyu", produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_XML_VALUE})
 public class LocalPluginController {
     
     private static final Logger LOG = LoggerFactory.getLogger(LocalPluginController.class);
@@ -72,6 +74,7 @@ public class LocalPluginController {
      */
     @GetMapping("/cleanAll")
     public Mono<String> cleanAll() {
+        LOG.info("clean all apache shenyu local plugin");
         subscriber.refreshPluginDataAll();
         subscriber.refreshSelectorDataAll();
         subscriber.refreshRuleDataAll();
@@ -86,10 +89,12 @@ public class LocalPluginController {
      */
     @GetMapping("/cleanPlugin")
     public Mono<String> cleanPlugin(@RequestParam("name") final String name) {
+        LOG.info("clean apache shenyu local plugin for {}", name);
         BaseDataCache.getInstance().removePluginDataByPluginName(name);
         List<SelectorData> selectorData = BaseDataCache.getInstance().obtainSelectorData(name);
         List<String> selectorIds = selectorData.stream().map(SelectorData::getId).collect(Collectors.toList());
         BaseDataCache.getInstance().removeSelectDataByPluginName(name);
+        MatchDataCache.getInstance().removeSelectorData(name);
         for (String selectorId : selectorIds) {
             BaseDataCache.getInstance().removeRuleDataBySelectorId(selectorId);
         }
@@ -104,11 +109,11 @@ public class LocalPluginController {
      */
     @PostMapping("/plugin/saveOrUpdate")
     public Mono<String> saveOrUpdate(@RequestBody final PluginData pluginData) {
-        LOG.info("saveOrUpdate apache shenyu local plugin");
+        LOG.info("saveOrUpdate apache shenyu local plugin for {}", pluginData.getName());
         subscriber.onSubscribe(pluginData);
         return Mono.just(Constants.SUCCESS);
     }
-    
+
     /**
      * Delete mono.
      *
@@ -117,12 +122,12 @@ public class LocalPluginController {
      */
     @GetMapping("/plugin/delete")
     public Mono<String> delete(@RequestParam("name") final String name) {
-        LOG.info("delete apache shenyu local plugin");
+        LOG.info("delete apache shenyu local plugin for {}", name);
         PluginData pluginData = PluginData.builder().name(name).build();
         subscriber.unSubscribe(pluginData);
         return Mono.just(Constants.SUCCESS);
     }
-    
+
     /**
      * Delete all mono.
      *
@@ -130,10 +135,11 @@ public class LocalPluginController {
      */
     @GetMapping("/plugin/deleteAll")
     public Mono<String> deleteAll() {
+        LOG.info("delete all apache shenyu local plugin");
         subscriber.refreshPluginDataAll();
         return Mono.just(Constants.SUCCESS);
     }
-    
+
     /**
      * Find by name mono.
      *
@@ -148,7 +154,7 @@ public class LocalPluginController {
         }
         return Mono.just(JsonUtils.toJson(pluginData));
     }
-    
+
     /**
      * Save selector mono.
      *
@@ -163,7 +169,7 @@ public class LocalPluginController {
         subscriber.onSelectorSubscribe(buildDefaultSelectorData(selectorData));
         return Mono.just(selectorData.getId());
     }
-    
+
     /**
      * Selector and rule mono.
      *
@@ -189,7 +195,7 @@ public class LocalPluginController {
         subscriber.onRuleSubscribe(buildDefaultRuleData(ruleData));
         return Mono.just(Constants.SUCCESS);
     }
-    
+
     /**
      * Selector and rules mono.
      *
@@ -221,7 +227,7 @@ public class LocalPluginController {
         }
         return Mono.just(Constants.SUCCESS);
     }
-    
+
     /**
      * Delete selector mono.
      *
@@ -236,7 +242,7 @@ public class LocalPluginController {
         subscriber.unSelectorSubscribe(selectorData);
         return Mono.just(Constants.SUCCESS);
     }
-    
+
     /**
      * Find list selector mono.
      *
@@ -257,7 +263,7 @@ public class LocalPluginController {
         }
         return Mono.just(JsonUtils.toJson(selectorDataList));
     }
-    
+
     /**
      * Save rule mono.
      *
@@ -272,22 +278,24 @@ public class LocalPluginController {
         subscriber.onRuleSubscribe(buildDefaultRuleData(ruleData));
         return Mono.just(ruleData.getId());
     }
-    
+
     /**
      * Delete rule mono.
      *
      * @param selectorId the selector id
      * @param id the id
+     * @param pluginName the pluginName
      * @return the mono
      */
     @GetMapping("/plugin/rule/delete")
     public Mono<String> deleteRule(@RequestParam("selectorId") final String selectorId,
-                                       @RequestParam("id") final String id) {
-        RuleData ruleData = RuleData.builder().selectorId(selectorId).id(id).build();
+                                   @RequestParam("id") final String id,
+                                   @RequestParam("pluginName") final String pluginName) {
+        RuleData ruleData = RuleData.builder().selectorId(selectorId).id(id).pluginName(pluginName).build();
         subscriber.unRuleSubscribe(ruleData);
         return Mono.just(Constants.SUCCESS);
     }
-    
+
     /**
      * Find list rule mono.
      *

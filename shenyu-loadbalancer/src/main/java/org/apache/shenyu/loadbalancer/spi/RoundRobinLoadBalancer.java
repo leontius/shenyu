@@ -21,13 +21,14 @@ import org.apache.shenyu.loadbalancer.entity.Upstream;
 import org.apache.shenyu.spi.Join;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Round robin load balance impl.
+ * Round-robin load balance impl.
  */
 @Join
 public class RoundRobinLoadBalancer extends AbstractLoadBalancer {
@@ -42,7 +43,7 @@ public class RoundRobinLoadBalancer extends AbstractLoadBalancer {
     public Upstream doSelect(final List<Upstream> upstreamList, final String ip) {
         String key = upstreamList.get(0).getUrl();
         ConcurrentMap<String, WeightedRoundRobin> map = methodWeightMap.get(key);
-        if (map == null) {
+        if (Objects.isNull(map)) {
             methodWeightMap.putIfAbsent(key, new ConcurrentHashMap<>(16));
             map = methodWeightMap.get(key);
         }
@@ -50,18 +51,18 @@ public class RoundRobinLoadBalancer extends AbstractLoadBalancer {
         long maxCurrent = Long.MIN_VALUE;
         long now = System.currentTimeMillis();
         Upstream selectedInvoker = null;
-        WeightedRoundRobin selectedWRR = null;
+        WeightedRoundRobin selectedWeightedRoundRobin = null;
         for (Upstream upstream : upstreamList) {
             String rKey = upstream.getUrl();
             WeightedRoundRobin weightedRoundRobin = map.get(rKey);
             int weight = getWeight(upstream);
-            if (weightedRoundRobin == null) {
+            if (Objects.isNull(weightedRoundRobin)) {
                 weightedRoundRobin = new WeightedRoundRobin();
                 weightedRoundRobin.setWeight(weight);
                 map.putIfAbsent(rKey, weightedRoundRobin);
             }
             if (weight != weightedRoundRobin.getWeight()) {
-                //weight changed
+                // weight changed.
                 weightedRoundRobin.setWeight(weight);
             }
             long cur = weightedRoundRobin.increaseCurrent();
@@ -69,13 +70,13 @@ public class RoundRobinLoadBalancer extends AbstractLoadBalancer {
             if (cur > maxCurrent) {
                 maxCurrent = cur;
                 selectedInvoker = upstream;
-                selectedWRR = weightedRoundRobin;
+                selectedWeightedRoundRobin = weightedRoundRobin;
             }
             totalWeight += weight;
         }
         if (!updateLock.get() && upstreamList.size() != map.size() && updateLock.compareAndSet(false, true)) {
             try {
-                // copy -> modify -> update reference
+                // copy -> modify -> update reference.
                 ConcurrentMap<String, WeightedRoundRobin> newMap = new ConcurrentHashMap<>(map);
                 newMap.entrySet().removeIf(item -> now - item.getValue().getLastUpdate() > recyclePeriod);
                 methodWeightMap.put(key, newMap);
@@ -83,16 +84,16 @@ public class RoundRobinLoadBalancer extends AbstractLoadBalancer {
                 updateLock.set(false);
             }
         }
-        if (selectedInvoker != null) {
-            selectedWRR.sel(totalWeight);
+        if (Objects.nonNull(selectedInvoker)) {
+            selectedWeightedRoundRobin.sel(totalWeight);
             return selectedInvoker;
         }
-        // should not happen here
+        // should not happen here.
         return upstreamList.get(0);
     }
 
     /**
-     * The type Weighted round robin.
+     * The type Weighted round-robin.
      */
     protected static class WeightedRoundRobin {
 

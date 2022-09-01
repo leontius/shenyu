@@ -17,6 +17,7 @@
 
 package org.apache.shenyu.admin.service;
 
+import org.apache.shenyu.admin.model.dto.CreateResourceDTO;
 import org.apache.shenyu.admin.model.dto.ResourceDTO;
 import org.apache.shenyu.admin.model.entity.ResourceDO;
 import org.apache.shenyu.admin.model.page.CommonPager;
@@ -30,22 +31,31 @@ import java.util.List;
  * this is Resource Service.
  */
 public interface ResourceService {
-
+    
     /**
-     * create Resource.
+     * create Resources.
      *
-     * @param resourceDO {@linkplain ResourceDO}
+     * @param resourceDOList list of {@linkplain ResourceDO}
+     * @return rows int
      */
-    void createResource(ResourceDO resourceDO);
-
+    int createResourceBatch(List<ResourceDO> resourceDOList);
+    
     /**
-     * create or update resource.
+     * create resource.
+     *
+     * @param createResourceDTO {@linkplain CreateResourceDTO}
+     * @return rows int
+     */
+    int create(CreateResourceDTO createResourceDTO);
+    
+    /**
+     * update resource.
      *
      * @param resourceDTO {@linkplain ResourceDTO}
      * @return rows int
      */
-    int createOrUpdate(ResourceDTO resourceDTO);
-
+    int update(ResourceDTO resourceDTO);
+    
     /**
      * delete resource by id.
      *
@@ -53,7 +63,7 @@ public interface ResourceService {
      * @return rows int
      */
     int delete(List<String> ids);
-
+    
     /**
      * find by id.
      *
@@ -61,7 +71,7 @@ public interface ResourceService {
      * @return {@linkplain ResourceVO}
      */
     ResourceVO findById(String id);
-
+    
     /**
      * find by title.
      *
@@ -69,7 +79,15 @@ public interface ResourceService {
      * @return {@linkplain ResourceVO}
      */
     ResourceVO findByTitle(String title);
-
+    
+    /**
+     * find by title.
+     *
+     * @param titles resource titles
+     * @return {@linkplain ResourceVO}
+     */
+    List<ResourceVO> listByTitles(List<String> titles);
+    
     /**
      * find page of resource by query.
      *
@@ -77,14 +95,14 @@ public interface ResourceService {
      * @return {@linkplain CommonPager}
      */
     CommonPager<ResourceVO> listByPage(ResourceQuery resourceQuery);
-
+    
     /**
      * get menu tree.
      *
      * @return {@linkplain List}
      */
     List<MenuInfo> getMenuTree();
-
+    
     /**
      * get button by parent id.
      *
@@ -92,13 +110,5 @@ public interface ResourceService {
      * @return {@linkplain List}
      */
     List<ResourceVO> findByParentId(String id);
-
-    /**
-     * get Menu Info.
-     *
-     * @param menuInfoList {@linkplain List} menu info.
-     * @param metaList {@linkplain List} resource list
-     * @param menuInfo {@linkplain MenuInfo}
-     */
-    void getMenuInfo(List<MenuInfo> menuInfoList, List<ResourceVO> metaList, MenuInfo menuInfo);
+    
 }

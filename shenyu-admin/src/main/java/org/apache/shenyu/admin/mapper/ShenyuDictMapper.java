@@ -21,15 +21,26 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.shenyu.admin.model.entity.ShenyuDictDO;
 import org.apache.shenyu.admin.model.query.ShenyuDictQuery;
+import org.apache.shenyu.admin.validation.ExistProvider;
 
+import java.io.Serializable;
 import java.util.List;
 
 /**
  * The shenyu dict mapper.
  */
 @Mapper
-public interface ShenyuDictMapper {
-
+public interface ShenyuDictMapper extends ExistProvider {
+    
+    /**
+     * dict is existed.
+     *
+     * @param id id
+     * @return existed.
+     */
+    @Override
+    Boolean existed(@Param("id") Serializable id);
+    
     /**
      * Select shenyu dict by id.
      *
@@ -37,7 +48,16 @@ public interface ShenyuDictMapper {
      * @return the shenyu dict do.
      */
     ShenyuDictDO selectById(@Param("id") String id);
-
+    
+    /**
+     * Select shenyu dict by dict code and dict name.
+     *
+     * @param dictCode the dict code.
+     * @param dictName the dict name.
+     * @return the shenyu dict do.
+     */
+    ShenyuDictDO selectByDictCodeAndDictName(@Param("dictCode") String dictCode, @Param("dictName") String dictName);
+    
     /**
      * find shenyu dict do list by dict type.
      *
@@ -45,7 +65,15 @@ public interface ShenyuDictMapper {
      * @return the list
      */
     List<ShenyuDictDO> findByType(@Param("type") String type);
-
+    
+    /**
+     * find shenyu dict do list by a list of types.
+     *
+     * @param typeList a list of types
+     * @return the list
+     */
+    List<ShenyuDictDO> findByTypeBatch(@Param("typeList") List<String> typeList);
+    
     /**
      * insert shenyu dict.
      *
@@ -53,7 +81,7 @@ public interface ShenyuDictMapper {
      * @return affected rows
      */
     int insert(ShenyuDictDO record);
-
+    
     /**
      * insert selective shenyu dict.
      *
@@ -61,7 +89,7 @@ public interface ShenyuDictMapper {
      * @return affected rows.
      */
     int insertSelective(ShenyuDictDO record);
-
+    
     /**
      * count shenyu dict by query.
      *
@@ -69,7 +97,7 @@ public interface ShenyuDictMapper {
      * @return the count
      */
     int countByQuery(ShenyuDictQuery shenyuDictQuery);
-
+    
     /**
      * select shenyu dict list by query.
      *
@@ -77,7 +105,7 @@ public interface ShenyuDictMapper {
      * @return the shenyu dict list
      */
     List<ShenyuDictDO> selectByQuery(ShenyuDictQuery shenyuDictQuery);
-
+    
     /**
      * update some selective columns in shenyu dict.
      *
@@ -85,7 +113,7 @@ public interface ShenyuDictMapper {
      * @return affected rows
      */
     int updateByPrimaryKeySelective(ShenyuDictDO record);
-
+    
     /**
      * update shenyu dict by primary key.
      *
@@ -93,7 +121,7 @@ public interface ShenyuDictMapper {
      * @return effected rows.
      */
     int updateByPrimaryKey(ShenyuDictDO record);
-
+    
     /**
      * delete string id.
      *
@@ -101,13 +129,29 @@ public interface ShenyuDictMapper {
      * @return affected rows
      */
     int delete(String id);
-
+    
+    /**
+     * delete by ids.
+     *
+     * @param idList a list of ids
+     * @return the count of deleted
+     */
+    int deleteByIdList(@Param("idList") List<String> idList);
+    
     /**
      * batch enabled.
      *
-     * @param ids shenyu dict ids
+     * @param ids     shenyu dict ids
      * @param enabled enabled status
      * @return affected rows
      */
     Integer enabled(@Param("ids") List<String> ids, @Param("enabled") Boolean enabled);
+    
+    /**
+     * select by ids.
+     *
+     * @param ids ids
+     * @return list
+     */
+    List<ShenyuDictDO> selectByIds(@Param("ids") List<String> ids);
 }

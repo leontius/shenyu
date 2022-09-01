@@ -28,33 +28,22 @@ import org.apache.shenyu.plugin.api.utils.BodyParamUtils;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.MediaType;
-import org.springframework.http.codec.HttpMessageReader;
 import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.lang.NonNull;
 import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.web.reactive.function.server.HandlerStrategies;
 import org.springframework.web.server.ServerWebExchange;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * The param transform plugin.
  */
 public class RpcParamTransformPlugin implements ShenyuPlugin {
-
-    private final List<HttpMessageReader<?>> messageReaders;
-
-    /**
-     * Instantiates a new param transform plugin.
-     */
-    public RpcParamTransformPlugin() {
-        this.messageReaders = HandlerStrategies.withDefaults().messageReaders();
-    }
 
     @Override
     public Mono<Void> execute(final ServerWebExchange exchange, final ShenyuPluginChain chain) {
@@ -84,24 +73,30 @@ public class RpcParamTransformPlugin implements ShenyuPlugin {
     }
 
     private Mono<Void> body(final ServerWebExchange exchange, final ServerHttpRequest serverHttpRequest, final ShenyuPluginChain chain) {
-        return Mono.from(serverHttpRequest.getBody()
+        return Mono.from(DataBufferUtils.join(serverHttpRequest.getBody())
+                .flatMap(data -> Mono.just(Optional.of(data)))
+                .defaultIfEmpty(Optional.empty())
                 .flatMap(body -> {
-                    exchange.getAttributes().put(Constants.PARAM_TRANSFORM, resolveBodyFromRequest(body));
+                    body.ifPresent(dataBuffer -> exchange.getAttributes().put(Constants.PARAM_TRANSFORM, resolveBodyFromRequest(dataBuffer)));
                     return chain.execute(exchange);
                 }));
     }
 
     private Mono<Void> formData(final ServerWebExchange exchange, final ServerHttpRequest serverHttpRequest, final ShenyuPluginChain chain) {
-        return Mono.from(serverHttpRequest.getBody()
+        return Mono.from(DataBufferUtils.join(serverHttpRequest.getBody())
+                .flatMap(data -> Mono.just(Optional.of(data)))
+                .defaultIfEmpty(Optional.empty())
                 .flatMap(map -> {
-                    String param = resolveBodyFromRequest(map);
-                    LinkedMultiValueMap linkedMultiValueMap;
-                    try {
-                        linkedMultiValueMap = BodyParamUtils.buildBodyParams(URLDecoder.decode(param, StandardCharsets.UTF_8.name()));
-                    } catch (UnsupportedEncodingException e) {
-                        return Flux.error(e);
+                    if (map.isPresent()) {
+                        String param = resolveBodyFromRequest(map.get());
+                        LinkedMultiValueMap<String, String> linkedMultiValueMap;
+                        try {
+                            linkedMultiValueMap = BodyParamUtils.buildBodyParams(URLDecoder.decode(param, StandardCharsets.UTF_8.name()));
+                        } catch (UnsupportedEncodingException e) {
+                            return Mono.error(e);
+                        }
+                        exchange.getAttributes().put(Constants.PARAM_TRANSFORM, HttpParamConverter.toMap(() -> linkedMultiValueMap));
                     }
-                    exchange.getAttributes().put(Constants.PARAM_TRANSFORM, HttpParamConverter.toMap(() -> linkedMultiValueMap));
                     return chain.execute(exchange);
                 }));
     }
@@ -113,16 +108,15 @@ public class RpcParamTransformPlugin implements ShenyuPlugin {
 
     @Override
     public boolean skip(final ServerWebExchange exchange) {
-        ShenyuContext shenyuContext = exchange.getAttribute(Constants.CONTEXT);
-        assert shenyuContext != null;
-        String rpcType = shenyuContext.getRpcType();
-        return !Objects.equals(rpcType, RpcTypeEnum.DUBBO.getName())
-                && !Objects.equals(rpcType, RpcTypeEnum.GRPC.getName())
-                && !Objects.equals(rpcType, RpcTypeEnum.TARS.getName())
-                && !Objects.equals(rpcType, RpcTypeEnum.MOTAN.getName())
-                && !Objects.equals(rpcType, RpcTypeEnum.SOFA.getName());
+        return skipExcept(exchange,
+                RpcTypeEnum.DUBBO,
+                RpcTypeEnum.GRPC,
+                RpcTypeEnum.TARS,
+                RpcTypeEnum.MOTAN,
+                RpcTypeEnum.SOFA);
     }
 
+    @NonNull
     private String resolveBodyFromRequest(final DataBuffer dataBuffer) {
         byte[] bytes = new byte[dataBuffer.readableByteCount()];
         dataBuffer.read(bytes);

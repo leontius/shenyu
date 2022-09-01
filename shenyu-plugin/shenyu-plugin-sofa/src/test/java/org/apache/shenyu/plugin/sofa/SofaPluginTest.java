@@ -25,27 +25,34 @@ import org.apache.shenyu.common.enums.PluginEnum;
 import org.apache.shenyu.common.enums.RpcTypeEnum;
 import org.apache.shenyu.plugin.api.ShenyuPluginChain;
 import org.apache.shenyu.plugin.api.context.ShenyuContext;
+import org.apache.shenyu.plugin.api.result.DefaultShenyuResult;
+import org.apache.shenyu.plugin.api.result.ShenyuResult;
+import org.apache.shenyu.plugin.api.utils.SpringBeanUtils;
 import org.apache.shenyu.plugin.sofa.proxy.SofaProxyService;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
  * SofaPluginTest.
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public final class SofaPluginTest {
     private SofaPlugin sofaPlugin;
 
@@ -56,7 +63,7 @@ public final class SofaPluginTest {
     @Mock
     private ShenyuPluginChain chain;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         exchange = MockServerWebExchange.from(MockServerHttpRequest.get("localhost").build());
         metaData = new MetaData();
@@ -79,6 +86,22 @@ public final class SofaPluginTest {
         exchange.getAttributes().put(Constants.META_DATA, metaData);
         when(chain.execute(exchange)).thenReturn(Mono.empty());
         SelectorData selectorData = mock(SelectorData.class);
+        StepVerifier.create(sofaPlugin.doExecute(exchange, chain, selectorData, data)).expectSubscription().verifyComplete();
+
+        metaData.setParameterTypes("parameterTypes");
+        StepVerifier.create(sofaPlugin.doExecute(exchange, chain, selectorData, data)).expectSubscription().verifyComplete();
+    }
+
+    @Test
+    public void testSofaPlugin2() {
+        ShenyuContext context = mock(ShenyuContext.class);
+        exchange.getAttributes().put(Constants.CONTEXT, context);
+        exchange.getAttributes().put(Constants.META_DATA, metaData);
+        when(chain.execute(exchange)).thenReturn(Mono.empty());
+        SelectorData selectorData = mock(SelectorData.class);
+        metaData.setParameterTypes(null);
+        metaData.setMethodName(null);
+        RuleData data = mock(RuleData.class);
         StepVerifier.create(sofaPlugin.doExecute(exchange, chain, selectorData, data)).expectSubscription().verifyComplete();
     }
 
@@ -103,5 +126,21 @@ public final class SofaPluginTest {
     public void testGetOrder() {
         final int result = sofaPlugin.getOrder();
         assertEquals(PluginEnum.SOFA.getCode(), result);
+    }
+
+    @Test
+    public void handleRuleIfNullTest() {
+        ConfigurableApplicationContext context = mock(ConfigurableApplicationContext.class);
+        SpringBeanUtils.getInstance().setApplicationContext(context);
+        when(context.getBean(ShenyuResult.class)).thenReturn(new DefaultShenyuResult());
+        StepVerifier.create(sofaPlugin.handleRuleIfNull("pluginName", this.exchange, this.chain)).expectSubscription().verifyComplete();
+    }
+
+    @Test
+    public void handleSelectorIfNullTest() {
+        ConfigurableApplicationContext context = mock(ConfigurableApplicationContext.class);
+        SpringBeanUtils.getInstance().setApplicationContext(context);
+        when(context.getBean(ShenyuResult.class)).thenReturn(new DefaultShenyuResult());
+        StepVerifier.create(sofaPlugin.handleSelectorIfNull("pluginName", this.exchange, this.chain)).expectSubscription().verifyComplete();
     }
 }

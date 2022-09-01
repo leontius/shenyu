@@ -21,15 +21,35 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.shenyu.admin.model.entity.AppAuthDO;
 import org.apache.shenyu.admin.model.query.AppAuthQuery;
+import org.apache.shenyu.admin.model.vo.AppAuthVO;
+import org.apache.shenyu.admin.validation.ExistProvider;
 
+import java.io.Serializable;
 import java.util.List;
 
 /**
  * AppAuthMapper.
  */
 @Mapper
-public interface AppAuthMapper {
-
+public interface AppAuthMapper extends ExistProvider {
+    
+    /**
+     * exited.
+     *
+     * @param id id.
+     * @return existed
+     */
+    @Override
+    Boolean existed(@Param("id") Serializable id);
+    
+    /**
+     * exited.
+     *
+     * @param appKey app key
+     * @return existed
+     */
+    Boolean appKeyExisted(@Param("appKey") Serializable appKey);
+    
     /**
      * select application authority by id.
      *
@@ -37,7 +57,15 @@ public interface AppAuthMapper {
      * @return {@linkplain AppAuthDO}
      */
     AppAuthDO selectById(String id);
-
+    
+    /**
+     * select application authority by id.
+     *
+     * @param ids pk.
+     * @return {@linkplain AppAuthDO}
+     */
+    List<AppAuthDO> selectByIds(List<String> ids);
+    
     /**
      * select application authority by query.
      *
@@ -45,14 +73,14 @@ public interface AppAuthMapper {
      * @return {@linkplain List}
      */
     List<AppAuthDO> selectByQuery(AppAuthQuery appAuthQuery);
-
+    
     /**
      * select all.
      *
      * @return {@linkplain List}
      */
     List<AppAuthDO> selectAll();
-
+    
     /**
      * count application authority by query.
      *
@@ -60,7 +88,7 @@ public interface AppAuthMapper {
      * @return {@linkplain Integer}
      */
     Integer countByQuery(AppAuthQuery appAuthQuery);
-
+    
     /**
      * insert application authority.
      *
@@ -68,7 +96,7 @@ public interface AppAuthMapper {
      * @return rows int
      */
     int insert(AppAuthDO appAuthDO);
-
+    
     /**
      * insert selective application authority.
      *
@@ -76,7 +104,7 @@ public interface AppAuthMapper {
      * @return rows int
      */
     int insertSelective(AppAuthDO appAuthDO);
-
+    
     /**
      * update application authority.
      *
@@ -84,7 +112,7 @@ public interface AppAuthMapper {
      * @return rows int
      */
     int update(AppAuthDO appAuthDO);
-
+    
     /**
      * Update enable int.
      *
@@ -92,8 +120,17 @@ public interface AppAuthMapper {
      * @return the int
      */
     int updateEnable(AppAuthDO appAuthDO);
-
-
+    
+    /**
+     * update enable batch.
+     *
+     * @param idList  the ids
+     * @param enabled the status
+     * @return the count
+     */
+    int updateEnableBatch(@Param("idList") List<String> idList, @Param("enabled") Boolean enabled);
+    
+    
     /**
      * Update app secret by app key int.
      *
@@ -102,7 +139,7 @@ public interface AppAuthMapper {
      * @return the int
      */
     int updateAppSecretByAppKey(@Param("appKey") String appKey, @Param("appSecret") String appSecret);
-
+    
     /**
      * update selective application authority.
      *
@@ -110,7 +147,7 @@ public interface AppAuthMapper {
      * @return rows int
      */
     int updateSelective(AppAuthDO appAuthDO);
-
+    
     /**
      * deleteSelector application authority.
      *
@@ -118,7 +155,15 @@ public interface AppAuthMapper {
      * @return rows int
      */
     int delete(String id);
-
+    
+    /**
+     * deleteSelector application authority.
+     *
+     * @param ids primary keys.
+     * @return rows int
+     */
+    int deleteByIds(List<String> ids);
+    
     /**
      * Find by app key app auth do.
      *
@@ -126,4 +171,12 @@ public interface AppAuthMapper {
      * @return the app auth do
      */
     AppAuthDO findByAppKey(String appKey);
+    
+    /**
+     * select by condition.
+     *
+     * @param condition condition.
+     * @return list
+     */
+    List<AppAuthVO> selectByCondition(@Param("condition") AppAuthQuery condition);
 }

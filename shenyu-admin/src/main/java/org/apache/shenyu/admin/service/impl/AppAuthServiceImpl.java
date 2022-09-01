@@ -32,6 +32,7 @@ import org.apache.shenyu.admin.model.dto.AuthPathWarpDTO;
 import org.apache.shenyu.admin.model.entity.AppAuthDO;
 import org.apache.shenyu.admin.model.entity.AuthParamDO;
 import org.apache.shenyu.admin.model.entity.AuthPathDO;
+import org.apache.shenyu.admin.model.entity.BaseDO;
 import org.apache.shenyu.admin.model.page.CommonPager;
 import org.apache.shenyu.admin.model.page.PageResultUtils;
 import org.apache.shenyu.admin.model.query.AppAuthQuery;
@@ -56,7 +57,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -81,6 +84,11 @@ public class AppAuthServiceImpl implements AppAuthService {
         this.eventPublisher = eventPublisher;
         this.authParamMapper = authParamMapper;
         this.authPathMapper = authPathMapper;
+    }
+
+    @Override
+    public List<AppAuthVO> searchByCondition(final AppAuthQuery condition) {
+        return appAuthMapper.selectByCondition(condition);
     }
 
     @Override
@@ -124,8 +132,7 @@ public class AppAuthServiceImpl implements AppAuthService {
 
     @Override
     public ShenyuAdminResult applyUpdate(final AuthApplyDTO authApplyDTO) {
-        if (StringUtils.isBlank(authApplyDTO.getAppKey())
-                || StringUtils.isBlank(authApplyDTO.getAppName())
+        if (StringUtils.isAnyBlank(authApplyDTO.getAppKey(), authApplyDTO.getAppName())
                 || (authApplyDTO.getOpen() && CollectionUtils.isEmpty(authApplyDTO.getPathList()))) {
             return ShenyuAdminResult.error(ShenyuResultMessage.PARAMETER_ERROR);
         }
@@ -162,16 +169,12 @@ public class AppAuthServiceImpl implements AppAuthService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ShenyuAdminResult updateDetail(final AppAuthDTO appAuthDTO) {
-        if (StringUtils.isBlank(appAuthDTO.getAppKey())
-                || StringUtils.isBlank(appAuthDTO.getAppSecret())
-                || StringUtils.isBlank(appAuthDTO.getId())) {
-            return ShenyuAdminResult.error(ShenyuResultMessage.PARAMETER_ERROR);
-        }
         AppAuthDO appAuthDO = AppAuthTransfer.INSTANCE.mapToEntity(appAuthDTO);
         appAuthMapper.update(appAuthDO);
         List<AuthParamDTO> authParamDTOList = appAuthDTO.getAuthParamDTOList();
         if (CollectionUtils.isNotEmpty(authParamDTOList)) {
             authParamMapper.deleteByAuthId(appAuthDTO.getId());
+
             List<AuthParamDO> authParamDOList = authParamDTOList.stream()
                     .map(dto -> AuthParamDO.create(appAuthDTO.getId(), dto.getAppName(), dto.getAppParam()))
                     .collect(Collectors.toList());
@@ -182,12 +185,16 @@ public class AppAuthServiceImpl implements AppAuthService {
             List<AuthPathDO> oldAuthPathDOList = authPathMapper.findByAuthId(appAuthDTO.getId());
             String appName = oldAuthPathDOList.stream().findFirst()
                     .map(AuthPathDO::getAppName).orElse(StringUtils.EMPTY);
+
             authPathMapper.deleteByAuthId(appAuthDTO.getId());
+
             List<AuthPathDO> authPathDOList = authPathDTOList.stream()
+                    .filter(Objects::nonNull)
                     .map(dto -> AuthPathDO.create(dto.getPath(), appAuthDTO.getId(), appName))
                     .collect(Collectors.toList());
             authPathMapper.batchSave(authPathDOList);
         }
+
         AppAuthData appAuthData = buildByEntity(appAuthDO);
         eventPublisher.publishEvent(new DataChangedEvent(ConfigGroupEnum.APP_AUTH,
                 DataEventTypeEnum.UPDATE,
@@ -204,7 +211,9 @@ public class AppAuthServiceImpl implements AppAuthService {
         List<AuthPathDTO> authPathDTOList = authPathWarpDTO.getAuthPathDTOList();
         if (CollectionUtils.isNotEmpty(authPathDTOList)) {
             authPathMapper.deleteByAuthId(authPathWarpDTO.getId());
+
             List<AuthPathDO> collect = authPathDTOList.stream()
+                    .filter(Objects::nonNull)
                     .map(authPathDTO -> AuthPathDO.create(authPathDTO.getPath(), appAuthDO.getId(), authPathDTO.getAppName()))
                     .collect(Collectors.toList());
             authPathMapper.batchSave(collect);
@@ -218,12 +227,25 @@ public class AppAuthServiceImpl implements AppAuthService {
     @Override
     public ShenyuAdminResult syncData() {
         List<AppAuthDO> appAuthDOList = appAuthMapper.selectAll();
-        if (CollectionUtils.isNotEmpty(appAuthDOList)) {
-            List<AppAuthData> dataList = appAuthDOList.stream().map(this::buildByEntity).collect(Collectors.toList());
-            eventPublisher.publishEvent(new DataChangedEvent(ConfigGroupEnum.APP_AUTH,
-                    DataEventTypeEnum.REFRESH,
-                    dataList));
+        if (CollectionUtils.isEmpty(appAuthDOList)) {
+            return ShenyuAdminResult.success();
         }
+
+        List<String> idList = appAuthDOList.stream().map(BaseDO::getId).collect(Collectors.toList());
+        Map<String, List<AuthParamData>> paramMap = this.prepareAuthParamData(idList);
+        Map<String, List<AuthPathData>> pathMap = this.prepareAuthPathData(idList);
+
+        List<AppAuthData> dataList = appAuthDOList.stream()
+                .filter(Objects::nonNull)
+                .map(appAuthDO -> {
+                    String id = appAuthDO.getId();
+                    return buildByEntityWithParamAndPath(appAuthDO, paramMap.get(id), pathMap.get(id));
+                })
+                .collect(Collectors.toList());
+        eventPublisher.publishEvent(new DataChangedEvent(ConfigGroupEnum.APP_AUTH,
+                DataEventTypeEnum.REFRESH,
+                dataList));
+
         return ShenyuAdminResult.success();
     }
 
@@ -239,7 +261,7 @@ public class AppAuthServiceImpl implements AppAuthService {
         int appAuthCount;
         AppAuthDO appAuthDO = AppAuthDO.create(appAuthDTO);
         DataEventTypeEnum eventType;
-        if (StringUtils.isEmpty(appAuthDTO.getId())) {
+        if (StringUtils.isBlank(appAuthDTO.getId())) {
             appAuthDO.setAppSecret(SignUtils.getInstance().generateKey());
             appAuthCount = appAuthMapper.insertSelective(appAuthDO);
             eventType = DataEventTypeEnum.CREATE;
@@ -262,15 +284,22 @@ public class AppAuthServiceImpl implements AppAuthService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public int delete(final List<String> ids) {
-        int appAuthCount = 0;
-        for (String id : ids) {
-            final AppAuthDO appAuthDO = appAuthMapper.selectById(id);
-            appAuthCount += appAuthMapper.delete(id);
-            authParamMapper.deleteByAuthId(id);
-            authPathMapper.deleteByAuthId(id);
+        int affectCount = appAuthMapper.deleteByIds(ids);
+        authParamMapper.deleteByAuthIds(ids);
+        authPathMapper.deleteByAuthIds(ids);
+        if (affectCount <= 0) {
+            return affectCount;
+        }
 
-            // publish delete event of AppAuthData
+        List<AppAuthDO> appAuthList = appAuthMapper.selectByIds(ids);
+        if (CollectionUtils.isEmpty(appAuthList)) {
+            return affectCount;
+        }
+
+        List<AppAuthData> appAuthData = new ArrayList<>(appAuthList.size());
+        appAuthList.forEach(appAuthDO -> {
             AppAuthData data = AppAuthData.builder()
                     .appKey(appAuthDO.getAppKey())
                     .appSecret(appAuthDO.getAppSecret())
@@ -279,26 +308,38 @@ public class AppAuthServiceImpl implements AppAuthService {
                     .paramDataList(null)
                     .pathDataList(null)
                     .build();
-            eventPublisher.publishEvent(new DataChangedEvent(ConfigGroupEnum.APP_AUTH, DataEventTypeEnum.DELETE, Collections.singletonList(data)));
-        }
-        return appAuthCount;
+            appAuthData.add(data);
+        });
+        // publish delete event of AppAuthData
+        eventPublisher.publishEvent(new DataChangedEvent(ConfigGroupEnum.APP_AUTH, DataEventTypeEnum.DELETE, appAuthData));
+
+        return affectCount;
     }
 
     @Override
     public String enabled(final List<String> ids, final Boolean enabled) {
-        List<AppAuthData> authDataList = Lists.newArrayList();
-        for (String id : ids) {
-            AppAuthDO appAuthDO = appAuthMapper.selectById(id);
-            if (Objects.isNull(appAuthDO)) {
-                return AdminConstants.ID_NOT_EXIST;
-            }
-            appAuthDO.setEnabled(enabled);
-            appAuthMapper.updateEnable(appAuthDO);
-            authDataList.add(buildByEntity(appAuthDO));
+        List<String> distinctIds = ids.stream().distinct().collect(Collectors.toList());
+        List<AppAuthDO> appAuthDOList = appAuthMapper.selectByIds(distinctIds);
+        if (CollectionUtils.isEmpty(appAuthDOList)) {
+            return AdminConstants.ID_NOT_EXIST;
         }
+
+        Map<String, List<AuthParamData>> paramMap = this.prepareAuthParamData(distinctIds);
+        Map<String, List<AuthPathData>> pathMap = this.prepareAuthPathData(distinctIds);
+
+        List<AppAuthData> authDataList = appAuthDOList.stream().map(appAuthDO -> {
+            String id = appAuthDO.getId();
+            appAuthDO.setEnabled(enabled);
+            return this.buildByEntityWithParamAndPath(appAuthDO, paramMap.get(id), pathMap.get(id));
+        }).collect(Collectors.toList());
+
+        appAuthMapper.updateEnableBatch(distinctIds, enabled);
+
         // publish change event.
-        eventPublisher.publishEvent(new DataChangedEvent(ConfigGroupEnum.APP_AUTH, DataEventTypeEnum.UPDATE,
-                authDataList));
+        if (CollectionUtils.isNotEmpty(authDataList)) {
+            eventPublisher.publishEvent(new DataChangedEvent(ConfigGroupEnum.APP_AUTH, DataEventTypeEnum.UPDATE,
+                    authDataList));
+        }
         return StringUtils.EMPTY;
     }
 
@@ -325,19 +366,21 @@ public class AppAuthServiceImpl implements AppAuthService {
     }
 
     @Override
-    public List<AuthPathVO> detailPath(final String id) {
-        List<AuthPathDO> authPathDOList = authPathMapper.findByAuthId(id);
-        if (CollectionUtils.isNotEmpty(authPathDOList)) {
-            return authPathDOList.stream().map(authPathDO -> {
-                AuthPathVO vo = new AuthPathVO();
-                vo.setId(authPathDO.getId());
-                vo.setAppName(authPathDO.getAppName());
-                vo.setPath(authPathDO.getPath());
-                vo.setEnabled(authPathDO.getEnabled());
-                return vo;
-            }).collect(Collectors.toList());
+    public List<AuthPathVO> detailPath(final String authId) {
+        List<AuthPathDO> authPathDOList = authPathMapper.findByAuthId(authId);
+        if (CollectionUtils.isEmpty(authPathDOList)) {
+            return new ArrayList<>();
         }
-        return new ArrayList<>();
+
+        return authPathDOList.stream().map(authPathDO -> {
+            AuthPathVO vo = new AuthPathVO();
+            vo.setId(authPathDO.getId());
+            vo.setAppName(authPathDO.getAppName());
+            vo.setPath(authPathDO.getPath());
+            vo.setEnabled(authPathDO.getEnabled());
+            return vo;
+        }).collect(Collectors.toList());
+
     }
 
     /**
@@ -358,15 +401,29 @@ public class AppAuthServiceImpl implements AppAuthService {
 
     @Override
     public List<AppAuthData> listAll() {
-        return appAuthMapper.selectAll()
-                .stream()
-                .map(this::buildByEntity)
-                .collect(Collectors.toList());
+        List<AppAuthDO> appAuthDOList = appAuthMapper.selectAll();
+        if (CollectionUtils.isEmpty(appAuthDOList)) {
+            return new ArrayList<>();
+        }
+
+        List<String> idList = appAuthDOList.stream().map(BaseDO::getId).collect(Collectors.toList());
+        Map<String, List<AuthParamData>> paramMap = this.prepareAuthParamData(idList);
+        Map<String, List<AuthPathData>> pathMap = this.prepareAuthPathData(idList);
+
+        return appAuthDOList.stream().map(appAuthDO -> {
+            String id = appAuthDO.getId();
+            return buildByEntityWithParamAndPath(appAuthDO, paramMap.get(id), pathMap.get(id));
+        }).collect(Collectors.toList());
     }
 
     @Override
     public ShenyuAdminResult updateAppSecretByAppKey(final String appKey, final String appSecret) {
         return ShenyuAdminResult.success(appAuthMapper.updateAppSecretByAppKey(appKey, appSecret));
+    }
+
+    @Override
+    public AppAuthDO findByAppKey(final String appKey) {
+        return appAuthMapper.findByAppKey(appKey);
     }
 
     private AppAuthData buildByEntity(final AppAuthDO appAuthDO) {
@@ -389,9 +446,66 @@ public class AppAuthServiceImpl implements AppAuthService {
             data.setPathDataList(
                     authPathDOList.stream()
                             .map(pathDO -> new AuthPathData(pathDO.getAppName(), pathDO.getPath(), pathDO.getEnabled()))
-                            .collect(Collectors.toList())
-            );
+                            .collect(Collectors.toList()));
         }
         return data;
     }
+
+    private AppAuthData buildByEntityWithParamAndPath(final AppAuthDO appAuthDO, final List<AuthParamData> authParamDataList, final List<AuthPathData> authPathDataList) {
+        AppAuthData data = AppAuthData.builder()
+                .appKey(appAuthDO.getAppKey())
+                .appSecret(appAuthDO.getAppSecret())
+                .open(appAuthDO.getOpen())
+                .enabled(appAuthDO.getEnabled())
+                .build();
+        if (CollectionUtils.isNotEmpty(authParamDataList)) {
+            data.setParamDataList(authParamDataList);
+        }
+        if (CollectionUtils.isNotEmpty(authPathDataList)) {
+            data.setPathDataList(authPathDataList);
+        }
+        return data;
+    }
+
+    /**
+     * prepare the Map with authIds.
+     * @param authIds auth id
+     * @return a map consist of param info
+     */
+    private Map<String, List<AuthParamData>> prepareAuthParamData(final List<String> authIds) {
+
+        List<AuthParamDO> authPathDOList = authParamMapper.findByAuthIdList(authIds);
+
+        return Optional.ofNullable(authPathDOList).orElseGet(ArrayList::new)
+                .stream().collect(Collectors.toMap(AuthParamDO::getAuthId,
+                    data -> {
+                        List<AuthParamData> dataList = new ArrayList<>();
+                        dataList.add(new AuthParamData(data.getAppName(), data.getAppParam()));
+                        return dataList;
+                    }, (List<AuthParamData> dataList1, List<AuthParamData> dataList2) -> {
+                        dataList1.addAll(dataList2);
+                        return dataList1;
+                    }));
+    }
+
+    /**
+     * prepare the Map with authIds.
+     * @param authIds auth id
+     * @return a map consist of path info
+     */
+    private Map<String, List<AuthPathData>> prepareAuthPathData(final List<String> authIds) {
+
+        List<AuthPathDO> authPathDOList = authPathMapper.findByAuthIdList(authIds);
+        return Optional.ofNullable(authPathDOList).orElseGet(ArrayList::new)
+                .stream().collect(Collectors.toMap(AuthPathDO::getAuthId,
+                    data -> {
+                        List<AuthPathData> dataList = new ArrayList<>();
+                        dataList.add(new AuthPathData(data.getAppName(), data.getPath(), data.getEnabled()));
+                        return dataList;
+                    }, (List<AuthPathData> dataList1, List<AuthPathData> dataList2) -> {
+                        dataList1.addAll(dataList2);
+                        return dataList1;
+                    }));
+    }
+
 }

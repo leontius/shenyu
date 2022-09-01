@@ -17,7 +17,9 @@
 
 package org.apache.shenyu.plugin.response.strategy;
 
+import com.google.common.collect.Lists;
 import org.apache.shenyu.common.constant.Constants;
+import org.apache.shenyu.common.enums.RpcTypeEnum;
 import org.apache.shenyu.plugin.api.ShenyuPluginChain;
 import org.springframework.core.io.buffer.NettyDataBuffer;
 import org.springframework.core.io.buffer.NettyDataBufferFactory;
@@ -31,19 +33,25 @@ import reactor.netty.Connection;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * The type Netty client message writer.
  */
 public class NettyClientMessageWriter implements MessageWriter {
 
-    private final List<MediaType> streamingMediaTypes = Arrays.asList(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_STREAM_JSON);
+    /**
+     * stream media type: from APPLICATION_STREAM_JSON upgrade to APPLICATION_STREAM_JSON_VALUE.
+     * Both of the above have expired.
+     * latest version: {@linkplain MediaType#APPLICATION_NDJSON}
+     */
+    private final List<MediaType> streamingMediaTypes = Arrays.asList(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_NDJSON);
 
     @Override
     public Mono<Void> writeWith(final ServerWebExchange exchange, final ShenyuPluginChain chain) {
         return chain.execute(exchange).doOnError(throwable -> cleanup(exchange)).then(Mono.defer(() -> {
             Connection connection = exchange.getAttribute(Constants.CLIENT_RESPONSE_CONN_ATTR);
-            if (connection == null) {
+            if (Objects.isNull(connection)) {
                 return Mono.empty();
             }
             ServerHttpResponse response = exchange.getResponse();
@@ -59,15 +67,20 @@ public class NettyClientMessageWriter implements MessageWriter {
                     : response.writeWith(body);
         })).doOnCancel(() -> cleanup(exchange));
     }
-
+    
+    @Override
+    public List<String> supportTypes() {
+        return Lists.newArrayList(RpcTypeEnum.HTTP.getName(), RpcTypeEnum.SPRING_CLOUD.getName());
+    }
+    
     private void cleanup(final ServerWebExchange exchange) {
         Connection connection = exchange.getAttribute(Constants.CLIENT_RESPONSE_CONN_ATTR);
-        if (connection != null) {
+        if (Objects.nonNull(connection)) {
             connection.dispose();
         }
     }
 
     private boolean isStreamingMediaType(@Nullable final MediaType contentType) {
-        return contentType != null && this.streamingMediaTypes.stream().anyMatch(contentType::isCompatibleWith);
+        return Objects.nonNull(contentType) && this.streamingMediaTypes.stream().anyMatch(contentType::isCompatibleWith);
     }
 }

@@ -17,10 +17,12 @@
 
 package org.apache.shenyu.register.client.zookeeper;
 
-import org.I0Itec.zkclient.IZkStateListener;
-import org.I0Itec.zkclient.ZkClient;
-import org.apache.zookeeper.Watcher;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.curator.framework.state.ConnectionState;
+import org.apache.shenyu.common.constant.Constants;
+import org.apache.shenyu.common.constant.DefaultPathConstants;
 import org.apache.shenyu.common.enums.RpcTypeEnum;
+import org.apache.shenyu.common.utils.ContextPathUtils;
 import org.apache.shenyu.common.utils.GsonUtils;
 import org.apache.shenyu.register.client.api.ShenyuClientRegisterRepository;
 import org.apache.shenyu.register.common.config.ShenyuRegisterCenterConfig;
@@ -28,13 +30,17 @@ import org.apache.shenyu.register.common.dto.MetaDataRegisterDTO;
 import org.apache.shenyu.register.common.dto.URIRegisterDTO;
 import org.apache.shenyu.register.common.path.RegisterPathConstants;
 import org.apache.shenyu.spi.Join;
+import org.apache.zookeeper.CreateMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
+
+import static org.apache.shenyu.common.constant.Constants.PATH_SEPARATOR;
 
 /**
  * The type Zookeeper client register repository.
@@ -44,100 +50,124 @@ public class ZookeeperClientRegisterRepository implements ShenyuClientRegisterRe
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ZookeeperClientRegisterRepository.class);
 
-    private ZkClient zkClient;
+    private ZookeeperClient client;
 
     private final Map<String, String> nodeDataMap = new HashMap<>();
+
+    private final Set<String> metadataSet = new HashSet<>();
+
+    public ZookeeperClientRegisterRepository() {
+    }
+
+    public ZookeeperClientRegisterRepository(final ShenyuRegisterCenterConfig config) {
+        init(config);
+    }
 
     @Override
     public void init(final ShenyuRegisterCenterConfig config) {
         Properties props = config.getProps();
         int sessionTimeout = Integer.parseInt(props.getProperty("sessionTimeout", "3000"));
         int connectionTimeout = Integer.parseInt(props.getProperty("connectionTimeout", "3000"));
-        this.zkClient = new ZkClient(config.getServerLists(), sessionTimeout, connectionTimeout);
-        this.zkClient.subscribeStateChanges(new ZkStateListener());
+
+        int baseSleepTime = Integer.parseInt(props.getProperty("baseSleepTime", "1000"));
+        int maxRetries = Integer.parseInt(props.getProperty("maxRetries", "3"));
+        int maxSleepTime = Integer.parseInt(props.getProperty("maxSleepTime", String.valueOf(Integer.MAX_VALUE)));
+
+        ZookeeperConfig zkConfig = new ZookeeperConfig(config.getServerLists());
+        zkConfig.setBaseSleepTimeMilliseconds(baseSleepTime)
+                .setMaxRetries(maxRetries)
+                .setMaxSleepTimeMilliseconds(maxSleepTime)
+                .setSessionTimeoutMilliseconds(sessionTimeout)
+                .setConnectionTimeoutMilliseconds(connectionTimeout);
+
+        String digest = props.getProperty("digest");
+        if (!StringUtils.isEmpty(digest)) {
+            zkConfig.setDigest(digest);
+        }
+
+        this.client = new ZookeeperClient(zkConfig);
+        this.client.getClient().getConnectionStateListenable().addListener((c, newState) -> {
+            if (newState == ConnectionState.RECONNECTED) {
+                nodeDataMap.forEach((k, v) -> {
+                    if (!client.isExist(k)) {
+                        client.createOrUpdate(k, v, CreateMode.EPHEMERAL);
+                        LOGGER.info("zookeeper client register uri success: {}", v);
+                    }
+                });
+            }
+        });
+
+        client.start();
     }
 
     @Override
     public void persistInterface(final MetaDataRegisterDTO metadata) {
         String rpcType = metadata.getRpcType();
-        String contextPath = metadata.getContextPath().substring(1);
+        String contextPath = ContextPathUtils.buildRealNode(metadata.getContextPath(), metadata.getAppName());
         registerMetadata(rpcType, contextPath, metadata);
-        Optional.of(RpcTypeEnum.acquireSupportURIs().stream().filter(rpcTypeEnum -> rpcType.equals(rpcTypeEnum.getName())).findFirst())
-                .ifPresent(rpcTypeEnum -> {
-                    registerURI(rpcType, contextPath, metadata);
-                });
-        LOGGER.info("{} zookeeper client register success: {}", rpcType, metadata);
+    }
+
+    /**
+     * Persist uri.
+     *
+     * @param registerDTO the register dto
+     */
+    @Override
+    public void persistURI(final URIRegisterDTO registerDTO) {
+        String rpcType = registerDTO.getRpcType();
+        String contextPath = ContextPathUtils.buildRealNode(registerDTO.getContextPath(), registerDTO.getAppName());
+        registerURI(rpcType, contextPath, registerDTO);
+        LOGGER.info("{} zookeeper client register uri success: {}", rpcType, registerDTO);
     }
 
     @Override
     public void close() {
-        zkClient.close();
+        this.client.close();
     }
 
-    private void registerMetadata(final String rpcType, final String contextPath, final MetaDataRegisterDTO metadata) {
+    private void registerMetadata(final String rpcType,
+                                  final String contextPath,
+                                  final MetaDataRegisterDTO metadata) {
         String metadataNodeName = buildMetadataNodeName(metadata);
         String metaDataPath = RegisterPathConstants.buildMetaDataParentPath(rpcType, contextPath);
-        if (!zkClient.exists(metaDataPath)) {
-            zkClient.createPersistent(metaDataPath, true);
-        }
         String realNode = RegisterPathConstants.buildRealNode(metaDataPath, metadataNodeName);
-        if (zkClient.exists(realNode)) {
-            zkClient.writeData(realNode, GsonUtils.getInstance().toJson(metadata));
-        } else {
-            zkClient.createPersistent(realNode, GsonUtils.getInstance().toJson(metadata));
+        // avoid dup registration for metadata
+        synchronized (metadataSet) {
+            if (metadataSet.contains(realNode)) {
+                return;
+            }
+            metadataSet.add(realNode);
         }
+        client.createOrUpdate(realNode, metadata, CreateMode.PERSISTENT);
+        LOGGER.info("{} zookeeper client register metadata success: {}", rpcType, metadata);
     }
 
-    private synchronized void registerURI(final String rpcType, final String contextPath, final MetaDataRegisterDTO metadata) {
-        String uriNodeName = buildURINodeName(metadata);
+    private synchronized void registerURI(final String rpcType, final String contextPath, final URIRegisterDTO registerDTO) {
+        String uriNodeName = buildURINodeName(registerDTO);
         String uriPath = RegisterPathConstants.buildURIParentPath(rpcType, contextPath);
-        if (!zkClient.exists(uriPath)) {
-            zkClient.createPersistent(uriPath, true);
-        }
         String realNode = RegisterPathConstants.buildRealNode(uriPath, uriNodeName);
-        if (!zkClient.exists(realNode)) {
-            String nodeData = GsonUtils.getInstance().toJson(URIRegisterDTO.transForm(metadata));
-            nodeDataMap.put(realNode, nodeData);
-            zkClient.createEphemeral(realNode, nodeData);
-        }
+        String nodeData = GsonUtils.getInstance().toJson(registerDTO);
+        nodeDataMap.put(realNode, nodeData);
+        client.createOrUpdate(realNode, nodeData, CreateMode.EPHEMERAL);
     }
 
-    private String buildURINodeName(final MetaDataRegisterDTO metadata) {
-        String host = metadata.getHost();
-        int port = metadata.getPort();
-        return String.join(":", host, Integer.toString(port));
+    private String buildURINodeName(final URIRegisterDTO registerDTO) {
+        String host = registerDTO.getHost();
+        int port = registerDTO.getPort();
+        return String.join(Constants.COLONS, host, Integer.toString(port));
     }
 
     private String buildMetadataNodeName(final MetaDataRegisterDTO metadata) {
         String nodeName;
         String rpcType = metadata.getRpcType();
-        if (RpcTypeEnum.HTTP.getName().equals(rpcType) || RpcTypeEnum.SPRING_CLOUD.getName().equals(rpcType)) {
-            nodeName = String.join("-", metadata.getContextPath(), metadata.getRuleName().replace("/", "-"));
+        if (RpcTypeEnum.HTTP.getName().equals(rpcType)
+                || RpcTypeEnum.SPRING_CLOUD.getName().equals(rpcType)) {
+            nodeName = String.join(DefaultPathConstants.SELECTOR_JOIN_RULE,
+                    metadata.getContextPath(),
+                    metadata.getRuleName().replace(PATH_SEPARATOR, DefaultPathConstants.SELECTOR_JOIN_RULE));
         } else {
             nodeName = RegisterPathConstants.buildNodeName(metadata.getServiceName(), metadata.getMethodName());
         }
-        return nodeName.startsWith("/") ? nodeName.substring(1) : nodeName;
-    }
-
-    private class ZkStateListener implements IZkStateListener {
-        @Override
-        public void handleStateChanged(final Watcher.Event.KeeperState keeperState) {
-            if (Watcher.Event.KeeperState.SyncConnected.equals(keeperState)) {
-                nodeDataMap.forEach((k, v) -> {
-                    if (!zkClient.exists(k)) {
-                        zkClient.createEphemeral(k, v);
-                        LOGGER.info("zookeeper client register success: {}", v);
-                    }
-                });
-            }
-        }
-
-        @Override
-        public void handleNewSession() {
-        }
-
-        @Override
-        public void handleSessionEstablishmentError(final Throwable throwable) {
-        }
+        return nodeName.startsWith(PATH_SEPARATOR) ? nodeName.substring(1) : nodeName;
     }
 }

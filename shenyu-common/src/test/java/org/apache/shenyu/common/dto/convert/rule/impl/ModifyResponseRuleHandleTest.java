@@ -17,54 +17,52 @@
 
 package org.apache.shenyu.common.dto.convert.rule.impl;
 
-import org.apache.shenyu.common.dto.convert.rule.RuleHandle;
-import org.junit.Test;
-import org.springframework.http.HttpStatus;
+import com.google.common.collect.ImmutableSet;
+import org.junit.jupiter.api.Test;
 
-import java.util.Collections;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.core.Is.is;
 
 /**
  * Test case for ModifyResponseRuleHandle.
  */
 public class ModifyResponseRuleHandleTest {
-
-    private static final String PATH = "/path/ModifyResponseRuleHandle";
-
-    @Test
-    public void testCreateDefault() {
-        ModifyResponseRuleHandle modifyResponseRuleHandle = new ModifyResponseRuleHandle();
-        RuleHandle aDefault = modifyResponseRuleHandle.createDefault(PATH, "");
-        assertNotNull(aDefault);
-        assertEquals(aDefault, modifyResponseRuleHandle);
-        assertEquals(HttpStatus.OK.value(), modifyResponseRuleHandle.getStatusCode());
-    }
-
-    /**
-     * just improve code coverage.
-     */
+    
     @Test
     public void testGetterSetter() {
-        ModifyResponseRuleHandle modifyResponseRuleHandle = new ModifyResponseRuleHandle();
-        modifyResponseRuleHandle.setAddHeaders(Collections.EMPTY_MAP);
-        assertEquals(modifyResponseRuleHandle.getAddHeaders(), Collections.EMPTY_MAP);
-        modifyResponseRuleHandle.setSetHeaders(Collections.EMPTY_MAP);
-        assertEquals(modifyResponseRuleHandle.getSetHeaders(), Collections.EMPTY_MAP);
-        modifyResponseRuleHandle.setReplaceHeaderKeys(Collections.EMPTY_MAP);
-        assertEquals(modifyResponseRuleHandle.getReplaceHeaderKeys(), Collections.EMPTY_MAP);
-        modifyResponseRuleHandle.setRemoveHeaderKeys(Collections.EMPTY_SET);
-        assertEquals(modifyResponseRuleHandle.getRemoveHeaderKeys(), Collections.EMPTY_SET);
-        modifyResponseRuleHandle.setStatusCode(HttpStatus.OK.value());
-        assertEquals(modifyResponseRuleHandle.getStatusCode(), HttpStatus.OK.value());
-        modifyResponseRuleHandle.setAddBodyKeys(Collections.EMPTY_LIST);
-        assertEquals(modifyResponseRuleHandle.getAddBodyKeys(), Collections.EMPTY_LIST);
-        modifyResponseRuleHandle.setReplaceBodyKeys(Collections.EMPTY_LIST);
-        assertEquals(modifyResponseRuleHandle.getReplaceBodyKeys(), Collections.EMPTY_LIST);
-        modifyResponseRuleHandle.setRemoveBodyKeys(Collections.EMPTY_SET);
-        assertEquals(modifyResponseRuleHandle.getRemoveBodyKeys(), Collections.EMPTY_SET);
-        assertNotNull(modifyResponseRuleHandle.toString());
+        ModifyResponseRuleHandle handle = new ModifyResponseRuleHandle();
+        
+        handle.setAddHeaders(new HashMap<>());
+        handle.setSetHeaders(new HashMap<>());
+        handle.setReplaceHeaderKeys(new HashMap<>());
+        handle.setRemoveHeaderKeys(new HashSet<>());
+        handle.setStatusCode(1);
+        handle.setAddBodyKeys(Arrays.asList(new ParamMappingRuleHandle.ParamMapInfo()));
+        handle.setReplaceBodyKeys(Arrays.asList(new ParamMappingRuleHandle.ParamMapInfo()));
+        handle.setRemoveBodyKeys(new HashSet<>());
+    
+        assertThat(handle.getAddHeaders(), is(notNullValue()));
+        assertThat(handle.getSetHeaders(), is(notNullValue()));
+        assertThat(handle.getReplaceHeaderKeys(), is(notNullValue()));
+        assertThat(handle.getRemoveHeaderKeys(), is(notNullValue()));
+        assertThat(handle.getRemoveBodyKeys(), is(notNullValue()));
+        assertThat(handle.getStatusCode(), is(1));
+        assertThat(handle.getAddBodyKeys(), hasSize(1));
+        assertThat(handle.getReplaceBodyKeys(), hasSize(1));
     }
-
+    
+    @Test
+    public void testEqualsAndHashCode() {
+        ModifyResponseRuleHandle handle1 = new ModifyResponseRuleHandle();
+        ModifyResponseRuleHandle handle2 = new ModifyResponseRuleHandle();
+        
+        assertThat(ImmutableSet.of(handle1, handle2), hasSize(1));
+    }
+    
 }

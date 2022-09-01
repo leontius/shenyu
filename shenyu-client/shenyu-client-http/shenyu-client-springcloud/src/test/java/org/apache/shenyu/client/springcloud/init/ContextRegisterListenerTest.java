@@ -17,40 +17,79 @@
 
 package org.apache.shenyu.client.springcloud.init;
 
-import org.apache.shenyu.client.core.register.ShenyuClientRegisterRepositoryFactory;
-import org.apache.shenyu.register.common.config.ShenyuRegisterCenterConfig;
-import org.junit.FixMethodOrder;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.MethodSorters;
+import org.apache.shenyu.client.core.constant.ShenyuClientConstants;
+import org.apache.shenyu.client.core.disruptor.ShenyuClientRegisterEventPublisher;
+import org.apache.shenyu.client.core.exception.ShenyuClientIllegalArgumentException;
+import org.apache.shenyu.common.utils.PortUtils;
+import org.apache.shenyu.register.client.api.ShenyuClientRegisterRepository;
+import org.apache.shenyu.register.common.config.PropertiesConfig;
+import org.junit.Assert;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.MockedStatic;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.core.env.Environment;
 
 import java.util.Properties;
 
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.mock;
 
 /**
- * Test case for {@link ContextRegisterListener}.
+ * Test for {@link ContextRegisterListener}.
  */
-@RunWith(MockitoJUnitRunner.class)
-@FixMethodOrder(MethodSorters.NAME_ASCENDING)
+@ExtendWith(MockitoExtension.class)
+@TestMethodOrder(MethodOrderer.Alphanumeric.class)
 public final class ContextRegisterListenerTest {
 
+    private ContextRegisterListener contextRegisterListener;
+
     @Mock
-    private static Environment env;
+    private Environment env;
+
+    @Mock
+    private PropertiesConfig config;
+
+    @Mock
+    private Properties properties;
+
+    @Mock
+    private BeanFactory beanFactory;
+
+    @BeforeEach
+    public void beforeEach() {
+        when(config.getProps()).thenReturn(properties);
+        when(properties.getProperty(ShenyuClientConstants.IS_FULL, Boolean.FALSE.toString())).thenReturn(Boolean.TRUE.toString());
+
+        // hit throws
+        Assert.assertThrows(ShenyuClientIllegalArgumentException.class, () -> new ContextRegisterListener(config, env));
+
+        // hit success
+        when(properties.getProperty(ShenyuClientConstants.CONTEXT_PATH)).thenReturn(ShenyuClientConstants.CONTEXT_PATH);
+        contextRegisterListener = new ContextRegisterListener(config, env);
+
+        ShenyuClientRegisterEventPublisher publisher = ShenyuClientRegisterEventPublisher.getInstance();
+        publisher.start(mock(ShenyuClientRegisterRepository.class));
+    }
 
     @Test
-    public void testNotFullRegister() {
-        Properties properties = new Properties();
-        ShenyuRegisterCenterConfig mockRegisterCenter = new ShenyuRegisterCenterConfig();
-        mockRegisterCenter.setServerLists("http://127.0.0.1:58080");
-        mockRegisterCenter.setRegisterType("http");
-        mockRegisterCenter.setProps(properties);
-        ContextRegisterListener contextRegisterListener = new ContextRegisterListener(mockRegisterCenter, env, ShenyuClientRegisterRepositoryFactory.newInstance(mockRegisterCenter));
-        ContextRefreshedEvent contextRefreshedEvent = mock(ContextRefreshedEvent.class);
-        contextRegisterListener.onApplicationEvent(contextRefreshedEvent);
+    public void testSetBeanFactory() {
+        contextRegisterListener.setBeanFactory(beanFactory);
+    }
+
+    @Test
+    public void testOnApplicationEvent() {
+        MockedStatic<PortUtils> portUtilsMockedStatic = mockStatic(PortUtils.class);
+        portUtilsMockedStatic.when(() -> PortUtils.findPort(beanFactory)).thenReturn(8080);
+        contextRegisterListener.onApplicationEvent(mock(ContextRefreshedEvent.class));
+        contextRegisterListener.onApplicationEvent(mock(ContextRefreshedEvent.class));
     }
 }
+

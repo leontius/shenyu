@@ -17,10 +17,12 @@
 
 package org.apache.shenyu.common.utils;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Test cases for PathMatchUtils.
@@ -42,5 +44,31 @@ public final class PathMatchUtilsTest {
         assertFalse(PathMatchUtils.match("test*aaa", "testblaaab"));
         // test matching with **'s
         assertTrue(PathMatchUtils.match("/**", "/testing/testing"));
+        assertTrue(PathMatchUtils.match("/test/**", "/test/test"));
+    }
+    
+    @Test
+    public void testPathPattern() {
+        // test matching with *'s
+        assertTrue(PathMatchUtils.pathPattern("*", "test"));
+        assertTrue(PathMatchUtils.pathPattern("test*", "test"));
+        assertTrue(PathMatchUtils.pathPattern("test*", "testTest"));
+        assertFalse(PathMatchUtils.pathPattern("test*aaa", "testblaaab"));
+        // test matching with **'s
+        assertTrue(PathMatchUtils.pathPattern("/**", "/testing/testing"));
+        assertTrue(PathMatchUtils.pathPattern("/test/**", "/test/test"));
+    }
+
+    @Test
+    public void testPathVariableHandle() {
+        //test filter PathVariable
+        assertTrue(PathMatchUtils.match("{id}/{name}", "/demo/order/path/{id}/{name}".substring("/demo/order/path/{id}/{name}".indexOf("{"))));
+        //test filter original param
+        assertTrue(PathMatchUtils.match("1/godfje@", "/demo/order/path/1/godfje@".substring("demo/order/path/{id}/{name}".indexOf("{") + 1)));
+        //test replaceAll result
+        final String realPath = PathMatchUtils.replaceAll("demo/order/path/{id}/{name}",
+                "/demo/order/path/{id}/{name}".substring("/demo/order/path/{id}/{name}".indexOf("{")),
+                "/demo/order/path/1/godfje@".substring("demo/order/path/{id}/{name}".indexOf("{") + 1));
+        assertThat(realPath, is("demo/order/path/1/godfje@"));
     }
 }

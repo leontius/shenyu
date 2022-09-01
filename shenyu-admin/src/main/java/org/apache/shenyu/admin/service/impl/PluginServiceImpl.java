@@ -17,44 +17,31 @@
 
 package org.apache.shenyu.admin.service.impl;
 
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.shenyu.admin.aspect.annotation.Pageable;
-import org.apache.shenyu.admin.listener.DataChangedEvent;
 import org.apache.shenyu.admin.mapper.PluginMapper;
-import org.apache.shenyu.admin.mapper.RuleConditionMapper;
-import org.apache.shenyu.admin.mapper.RuleMapper;
-import org.apache.shenyu.admin.mapper.SelectorConditionMapper;
-import org.apache.shenyu.admin.mapper.SelectorMapper;
 import org.apache.shenyu.admin.model.dto.PluginDTO;
-import org.apache.shenyu.admin.model.dto.ResourceDTO;
 import org.apache.shenyu.admin.model.entity.PluginDO;
-import org.apache.shenyu.admin.model.entity.ResourceDO;
-import org.apache.shenyu.admin.model.entity.RuleDO;
-import org.apache.shenyu.admin.model.entity.SelectorDO;
+import org.apache.shenyu.admin.model.event.plugin.PluginCreatedEvent;
 import org.apache.shenyu.admin.model.page.CommonPager;
 import org.apache.shenyu.admin.model.page.PageResultUtils;
 import org.apache.shenyu.admin.model.query.PluginQuery;
-import org.apache.shenyu.admin.model.query.RuleConditionQuery;
-import org.apache.shenyu.admin.model.query.RuleQuery;
-import org.apache.shenyu.admin.model.query.SelectorConditionQuery;
-import org.apache.shenyu.admin.model.query.SelectorQuery;
+import org.apache.shenyu.admin.model.query.PluginQueryCondition;
+import org.apache.shenyu.admin.model.vo.PluginSnapshotVO;
 import org.apache.shenyu.admin.model.vo.PluginVO;
-import org.apache.shenyu.admin.model.vo.ResourceVO;
 import org.apache.shenyu.admin.service.PluginService;
-import org.apache.shenyu.admin.service.ResourceService;
+import org.apache.shenyu.admin.service.publish.PluginEventPublisher;
 import org.apache.shenyu.admin.transfer.PluginTransfer;
+import org.apache.shenyu.admin.utils.Assert;
+import org.apache.shenyu.admin.utils.ListUtil;
+import org.apache.shenyu.admin.utils.SessionUtil;
+import org.apache.shenyu.admin.utils.ShenyuResultMessage;
 import org.apache.shenyu.common.constant.AdminConstants;
 import org.apache.shenyu.common.dto.PluginData;
-import org.apache.shenyu.common.enums.AdminPluginOperateEnum;
-import org.apache.shenyu.common.enums.AdminResourceEnum;
-import org.apache.shenyu.common.enums.ConfigGroupEnum;
-import org.apache.shenyu.common.enums.DataEventTypeEnum;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.ObjectUtils;
 
-import java.sql.Timestamp;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -65,37 +52,23 @@ import java.util.stream.Collectors;
  */
 @Service
 public class PluginServiceImpl implements PluginService {
-
+    
     private final PluginMapper pluginMapper;
-
-    private final SelectorMapper selectorMapper;
-
-    private final SelectorConditionMapper selectorConditionMapper;
-
-    private final RuleMapper ruleMapper;
-
-    private final RuleConditionMapper ruleConditionMapper;
-
-    private final ApplicationEventPublisher eventPublisher;
-
-    private final ResourceService resourceService;
-
+    
+    private final PluginEventPublisher pluginEventPublisher;
+    
     public PluginServiceImpl(final PluginMapper pluginMapper,
-                             final SelectorMapper selectorMapper,
-                             final SelectorConditionMapper selectorConditionMapper,
-                             final RuleMapper ruleMapper,
-                             final RuleConditionMapper ruleConditionMapper,
-                             final ApplicationEventPublisher eventPublisher,
-                             final ResourceService resourceService) {
+                             final PluginEventPublisher pluginEventPublisher) {
         this.pluginMapper = pluginMapper;
-        this.selectorMapper = selectorMapper;
-        this.selectorConditionMapper = selectorConditionMapper;
-        this.ruleMapper = ruleMapper;
-        this.ruleConditionMapper = ruleConditionMapper;
-        this.eventPublisher = eventPublisher;
-        this.resourceService = resourceService;
+        this.pluginEventPublisher = pluginEventPublisher;
     }
-
+    
+    @Override
+    public List<PluginVO> searchByCondition(final PluginQueryCondition condition) {
+        condition.init();
+        return pluginMapper.searchByCondition(condition);
+    }
+    
     /**
      * create or update plugin.
      *
@@ -103,28 +76,10 @@ public class PluginServiceImpl implements PluginService {
      * @return rows
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public String createOrUpdate(final PluginDTO pluginDTO) {
-        final String msg = checkData(pluginDTO);
-        if (StringUtils.isNoneBlank(msg)) {
-            return msg;
-        }
-        PluginDO pluginDO = PluginDO.buildPluginDO(pluginDTO);
-        DataEventTypeEnum eventType = DataEventTypeEnum.CREATE;
-        if (StringUtils.isBlank(pluginDTO.getId())) {
-            insertPluginDataToResource(pluginDTO);
-            pluginMapper.insertSelective(pluginDO);
-        } else {
-            eventType = DataEventTypeEnum.UPDATE;
-            pluginMapper.updateSelective(pluginDO);
-        }
-
-        // publish change event.
-        eventPublisher.publishEvent(new DataChangedEvent(ConfigGroupEnum.PLUGIN, eventType,
-                Collections.singletonList(PluginTransfer.INSTANCE.mapToData(pluginDO))));
-        return StringUtils.EMPTY;
+        return StringUtils.isBlank(pluginDTO.getId()) ? this.create(pluginDTO) : this.update(pluginDTO);
     }
-
+    
     /**
      * delete plugins.
      *
@@ -134,30 +89,19 @@ public class PluginServiceImpl implements PluginService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public String delete(final List<String> ids) {
-        for (String id : ids) {
-            PluginDO pluginDO = pluginMapper.selectById(id);
-            if (Objects.isNull(pluginDO)) {
-                return AdminConstants.SYS_PLUGIN_ID_NOT_EXIST;
-            }
-            pluginMapper.delete(id);
-            deletePluginDataFromResourceAndPermission(pluginDO.getName());
-            final List<SelectorDO> selectorDOList = selectorMapper.selectByQuery(new SelectorQuery(id, null, null));
-            selectorDOList.forEach(selectorDO -> {
-                final List<RuleDO> ruleDOS = ruleMapper.selectByQuery(new RuleQuery(selectorDO.getId(), null, null));
-                ruleDOS.forEach(ruleDO -> {
-                    ruleMapper.delete(ruleDO.getId());
-                    ruleConditionMapper.deleteByQuery(new RuleConditionQuery(ruleDO.getId()));
-                });
-                selectorMapper.delete(selectorDO.getId());
-                selectorConditionMapper.deleteByQuery(new SelectorConditionQuery(selectorDO.getId()));
-            });
-            // publish change event.
-            eventPublisher.publishEvent(new DataChangedEvent(ConfigGroupEnum.PLUGIN, DataEventTypeEnum.DELETE,
-                    Collections.singletonList(PluginTransfer.INSTANCE.mapToData(pluginDO))));
+        // select plugin id.
+        List<PluginDO> plugins = this.pluginMapper.selectByIds(ids);
+        if (CollectionUtils.isEmpty(plugins)) {
+            return AdminConstants.SYS_PLUGIN_ID_NOT_EXIST;
+        }
+        // delete plugins.
+        if (this.pluginMapper.deleteByIds(ListUtil.map(plugins, PluginDO::getId)) > 0) {
+            // publish deleted event. synchronously delete and link data[selector,rule,condition,resource]
+            pluginEventPublisher.onDeleted(plugins);
         }
         return StringUtils.EMPTY;
     }
-
+    
     /**
      * plugin enabled.
      *
@@ -167,22 +111,19 @@ public class PluginServiceImpl implements PluginService {
      */
     @Override
     public String enabled(final List<String> ids, final Boolean enabled) {
-        for (String id : ids) {
-            PluginDO pluginDO = pluginMapper.selectById(id);
-            if (Objects.isNull(pluginDO)) {
-                return AdminConstants.SYS_PLUGIN_ID_NOT_EXIST;
-            }
-            pluginDO.setDateUpdated(new Timestamp(System.currentTimeMillis()));
-            pluginDO.setEnabled(enabled);
-            pluginMapper.updateEnable(pluginDO);
-
-            // publish change event.
-            eventPublisher.publishEvent(new DataChangedEvent(ConfigGroupEnum.PLUGIN, DataEventTypeEnum.UPDATE,
-                    Collections.singletonList(PluginTransfer.INSTANCE.mapToData(pluginDO))));
+        List<PluginDO> plugins = pluginMapper.selectByIds(ids);
+        if (CollectionUtils.isEmpty(plugins)) {
+            return AdminConstants.SYS_PLUGIN_ID_NOT_EXIST;
+        }
+        plugins.forEach(pluginDO -> pluginDO.setEnabled(enabled));
+        pluginMapper.updateEnableByIdList(ids, enabled);
+        // publish change event.
+        if (CollectionUtils.isNotEmpty(plugins)) {
+            pluginEventPublisher.onEnabled(plugins);
         }
         return StringUtils.EMPTY;
     }
-
+    
     /**
      * find plugin by id.
      *
@@ -193,7 +134,7 @@ public class PluginServiceImpl implements PluginService {
     public PluginVO findById(final String id) {
         return PluginVO.buildPluginVO(pluginMapper.selectById(id));
     }
-
+    
     /**
      * find page of plugin by query.
      *
@@ -203,10 +144,12 @@ public class PluginServiceImpl implements PluginService {
     @Override
     @Pageable
     public CommonPager<PluginVO> listByPage(final PluginQuery pluginQuery) {
-        return PageResultUtils.result(pluginQuery.getPageParameter(),
-            () -> pluginMapper.selectByQuery(pluginQuery).stream().map(PluginVO::buildPluginVO).collect(Collectors.toList()));
+        return PageResultUtils.result(pluginQuery.getPageParameter(), () -> pluginMapper.selectByQuery(pluginQuery)
+                .stream()
+                .map(PluginVO::buildPluginVO)
+                .collect(Collectors.toList()));
     }
-
+    
     /**
      * query all plugin.
      *
@@ -214,119 +157,70 @@ public class PluginServiceImpl implements PluginService {
      */
     @Override
     public List<PluginData> listAll() {
-        return pluginMapper.selectAll().stream()
-                .map(PluginTransfer.INSTANCE::mapToData)
-                .collect(Collectors.toList());
+        return ListUtil.map(pluginMapper.selectAll(), PluginTransfer.INSTANCE::mapToData);
     }
-
+    
+    @Override
+    public List<PluginData> listAllNotInResource() {
+        return ListUtil.map(pluginMapper.listAllNotInResource(), PluginTransfer.INSTANCE::mapToData);
+    }
+    
     @Override
     public String selectIdByName(final String name) {
         PluginDO pluginDO = pluginMapper.selectByName(name);
         Objects.requireNonNull(pluginDO);
         return pluginDO.getId();
     }
-
+    
     /**
-     * check plugin Data integrity.
+     * Find by name plugin do.
      *
-     * @param pluginDTO {@linkplain PluginDTO}
-     * @return result description
+     * @param name the name
+     * @return the plugin do
      */
-    private String checkData(final PluginDTO pluginDTO) {
-        final PluginDO exist = pluginMapper.selectByName(pluginDTO.getName());
-        if (StringUtils.isBlank(pluginDTO.getId())) {
-            if (Objects.nonNull(exist)) {
-                return AdminConstants.PLUGIN_NAME_IS_EXIST;
-            }
-        } else {
-            if (Objects.isNull(exist) || !exist.getId().equals(pluginDTO.getId())) {
-                return AdminConstants.PLUGIN_NAME_NOT_EXIST;
-            }
+    @Override
+    public PluginDO findByName(final String name) {
+        return pluginMapper.selectByName(name);
+    }
+    
+    @Override
+    public List<PluginSnapshotVO> activePluginSnapshot() {
+        return pluginMapper.activePluginSnapshot(AdminConstants.ADMIN_NAME.equals(SessionUtil.visitorName()) ? null : SessionUtil.visitor().getUserId());
+    }
+    
+    /**
+     * create plugin.<br>
+     * insert plugin and insert plugin data.
+     *
+     * @param pluginDTO plugin info
+     * @return success is empty
+     * @see ResourceServiceImpl#onPluginCreated(PluginCreatedEvent)
+     * @see PluginCreatedEvent
+     */
+    private String create(final PluginDTO pluginDTO) {
+        Assert.isNull(pluginMapper.nameExisted(pluginDTO.getName()), AdminConstants.PLUGIN_NAME_IS_EXIST);
+        PluginDO pluginDO = PluginDO.buildPluginDO(pluginDTO);
+        if (pluginMapper.insertSelective(pluginDO) > 0) {
+            // publish create event. init plugin data
+            pluginEventPublisher.onCreated(pluginDO);
         }
-        return StringUtils.EMPTY;
+        return ShenyuResultMessage.CREATE_SUCCESS;
     }
-
+    
     /**
-     * delete plugin resource from resource and permission.
+     * update plugin.<br>
      *
-     * @param pluginName plugin name
+     * @param pluginDTO plugin
+     * @return success is empty
      */
-    private void deletePluginDataFromResourceAndPermission(final String pluginName) {
-        ResourceVO resourceVO = resourceService.findByTitle(pluginName);
-        if (!ObjectUtils.isEmpty(resourceVO)) {
-            resourceService.delete(Collections.singletonList(resourceVO.getId()));
+    private String update(final PluginDTO pluginDTO) {
+        Assert.isNull(pluginMapper.nameExistedExclude(pluginDTO.getName(), Collections.singletonList(pluginDTO.getId())), AdminConstants.PLUGIN_NAME_IS_EXIST);
+        final PluginDO before = pluginMapper.selectById(pluginDTO.getId());
+        PluginDO pluginDO = PluginDO.buildPluginDO(pluginDTO);
+        if (pluginMapper.updateSelective(pluginDO) > 0) {
+            // publish update event.
+            pluginEventPublisher.onUpdated(pluginDO, before);
         }
-    }
-
-    /**
-     * add plugin and add plugin resource.
-     *
-     * @param pluginDTO {@linkplain PluginDTO}
-     */
-    private void insertPluginDataToResource(final PluginDTO pluginDTO) {
-        ResourceDO resourceDO = ResourceDO.buildResourceDO(ResourceDTO.builder()
-                .parentId(AdminConstants.RESOURCE_PLUGIN_ID)
-                .title(pluginDTO.getName())
-                .name(pluginDTO.getName())
-                .url(AdminConstants.RESOURCE_PLUGIN_URL_PREFIX + pluginDTO.getName())
-                .component(pluginDTO.getName())
-                .resourceType(AdminResourceEnum.SECOND_MENU.getCode())
-                .sort(0)
-                .icon(AdminConstants.RESOURCE_PLUGIN_DEFAULT_ICON)
-                .isLeaf(Boolean.FALSE).isRoute(0).status(1).perms(StringUtils.EMPTY).build());
-        insertPluginMenuResource(resourceDO);
-        insertPluginButtonResource(resourceDO.getId(), pluginDTO.getName(), ConfigGroupEnum.SELECTOR, AdminPluginOperateEnum.ADD);
-        insertPluginButtonResource(resourceDO.getId(), pluginDTO.getName(), ConfigGroupEnum.SELECTOR, AdminPluginOperateEnum.DELETE);
-        insertPluginButtonResource(resourceDO.getId(), pluginDTO.getName(), ConfigGroupEnum.SELECTOR, AdminPluginOperateEnum.EDIT);
-        insertPluginButtonResource(resourceDO.getId(), pluginDTO.getName(), ConfigGroupEnum.SELECTOR, AdminPluginOperateEnum.QUERY);
-        insertPluginButtonResource(resourceDO.getId(), pluginDTO.getName(), ConfigGroupEnum.RULE, AdminPluginOperateEnum.ADD);
-        insertPluginButtonResource(resourceDO.getId(), pluginDTO.getName(), ConfigGroupEnum.RULE, AdminPluginOperateEnum.DELETE);
-        insertPluginButtonResource(resourceDO.getId(), pluginDTO.getName(), ConfigGroupEnum.RULE, AdminPluginOperateEnum.EDIT);
-        insertPluginButtonResource(resourceDO.getId(), pluginDTO.getName(), ConfigGroupEnum.RULE, AdminPluginOperateEnum.QUERY);
-        insertPluginButtonResource(resourceDO.getId(), pluginDTO.getName(), ConfigGroupEnum.PLUGIN, AdminPluginOperateEnum.SYNCHRONIZE);
-    }
-
-    /**
-     * insert Resource Data.
-     *
-     * @param resourceDO {@linkplain ResourceDO}
-     */
-    private void insertPluginMenuResource(final ResourceDO resourceDO) {
-        resourceService.createResource(resourceDO);
-    }
-
-    /**
-     * insert Plugin Selector Button Resource.
-     *
-     * @param parentId parent menu id
-     * @param pluginName plugin name
-     * @param configGroupEnum {@linkplain ConfigGroupEnum}
-     * @param adminPluginOperateEnum {@linkplain AdminPluginOperateEnum}
-     */
-    private void insertPluginButtonResource(final String parentId, final String pluginName,
-                                           final ConfigGroupEnum configGroupEnum, final AdminPluginOperateEnum adminPluginOperateEnum) {
-        ResourceDO resourceDO = ResourceDO.buildResourceDO(ResourceDTO.builder()
-                .parentId(parentId)
-                .name(StringUtils.EMPTY).url(StringUtils.EMPTY).component(StringUtils.EMPTY)
-                .resourceType(AdminResourceEnum.THREE_MENU.getCode())
-                .isLeaf(Boolean.TRUE).status(1).sort(0).icon(StringUtils.EMPTY).isRoute(0).build());
-        switch (configGroupEnum) {
-            case SELECTOR:
-                resourceDO.setTitle("SHENYU.BUTTON.PLUGIN." + ConfigGroupEnum.SELECTOR.name() + "." + adminPluginOperateEnum.name());
-                resourceDO.setPerms("plugin:" + pluginName + "Selector:" + adminPluginOperateEnum.getName());
-                break;
-            case RULE:
-                resourceDO.setTitle("SHENYU.BUTTON.PLUGIN." + ConfigGroupEnum.RULE.name() + "." + adminPluginOperateEnum.name());
-                resourceDO.setPerms("plugin:" + pluginName + "Rule:" + adminPluginOperateEnum.getName());
-                break;
-            case PLUGIN:
-                resourceDO.setTitle("SHENYU.BUTTON.PLUGIN." + adminPluginOperateEnum.name());
-                resourceDO.setPerms("plugin:" + pluginName + ":" + adminPluginOperateEnum.getName());
-                break;
-            default:
-                break;
-        }
-
-        insertPluginMenuResource(resourceDO);
+        return ShenyuResultMessage.UPDATE_SUCCESS;
     }
 }

@@ -32,14 +32,20 @@ import org.apache.shenyu.plugin.api.context.ShenyuContext;
 import org.apache.shenyu.plugin.api.result.DefaultShenyuResult;
 import org.apache.shenyu.plugin.api.result.ShenyuResult;
 import org.apache.shenyu.plugin.api.utils.SpringBeanUtils;
+import org.apache.shenyu.plugin.api.utils.WebFluxResultUtils;
 import org.apache.shenyu.plugin.base.utils.CacheKeyUtils;
 import org.apache.shenyu.plugin.springcloud.handler.SpringCloudPluginDataHandler;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
-import org.springframework.cloud.netflix.ribbon.RibbonLoadBalancerClient;
+import org.apache.shenyu.plugin.springcloud.loadbalance.ShenyuSpringCloudServiceChooser;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import org.springframework.cloud.client.DefaultServiceInstance;
+import org.springframework.cloud.client.discovery.simple.SimpleDiscoveryClient;
+import org.springframework.cloud.client.discovery.simple.SimpleDiscoveryProperties;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.http.HttpMethod;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
@@ -51,24 +57,27 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
  * The Test Case For {@link SpringCloudPlugin}.
  */
-@RunWith(MockitoJUnitRunner.class)
-public class SpringCloudPluginTest {
-
-    @Mock
-    private RibbonLoadBalancerClient loadBalancerClient;
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+public final class SpringCloudPluginTest {
 
     private SpringCloudPlugin springCloudPlugin;
 
@@ -80,7 +89,7 @@ public class SpringCloudPluginTest {
 
     private ShenyuContext shenyuContext;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         ConfigurableApplicationContext applicationContext = mock(ConfigurableApplicationContext.class);
         when(applicationContext.getBean(ShenyuResult.class)).thenReturn(new DefaultShenyuResult());
@@ -94,17 +103,32 @@ public class SpringCloudPluginTest {
         when(shenyuContext.getRpcType()).thenReturn(RpcTypeEnum.SPRING_CLOUD.getName());
         exchange.getAttributes().put(Constants.CONTEXT, shenyuContext);
         chain = mock(ShenyuPluginChain.class);
-        selector = mock(SelectorData.class);
+        selector = SelectorData.builder().id("1").enabled(true).build();
+        final List<DefaultServiceInstance> serviceInstanceList = new ArrayList<>();
+        DefaultServiceInstance defaultServiceInstance = new DefaultServiceInstance();
+        defaultServiceInstance.setServiceId("serviceId");
+        defaultServiceInstance.setUri(URI.create("http://localhost:8080"));
+        defaultServiceInstance.setInstanceId("serviceId");
+        defaultServiceInstance.setPort(8080);
+        defaultServiceInstance.setHost("localhost");
+        serviceInstanceList.add(defaultServiceInstance);
+        SimpleDiscoveryProperties simpleDiscoveryProperties = new SimpleDiscoveryProperties();
+        Map<String, List<DefaultServiceInstance>> serviceInstanceMap = new HashMap<>();
+        serviceInstanceMap.put(defaultServiceInstance.getInstanceId(), serviceInstanceList);
+        simpleDiscoveryProperties.setInstances(serviceInstanceMap);
+        SimpleDiscoveryClient discoveryClient = new SimpleDiscoveryClient(simpleDiscoveryProperties);
+        ShenyuSpringCloudServiceChooser loadBalancerClient = new ShenyuSpringCloudServiceChooser(discoveryClient);
         springCloudPlugin = new SpringCloudPlugin(loadBalancerClient);
     }
 
-    @Test(expected = NullPointerException.class)
+    @Test
     public void doExecute() {
         final ShenyuPluginChain chain = mock(ShenyuPluginChain.class);
         final SpringCloudSelectorHandle springCloudSelectorHandle = SpringCloudSelectorHandle.builder()
                 .serviceId("serviceId")
                 .build();
         final SelectorData selectorData = SelectorData.builder()
+                .id("1")
                 .handle(GsonUtils.getInstance().toJson(springCloudSelectorHandle))
                 .build();
         SpringCloudPluginDataHandler.SELECTOR_CACHED.get().cachedHandle(selectorData.getId(), springCloudSelectorHandle);
@@ -113,6 +137,7 @@ public class SpringCloudPluginTest {
         springCloudRuleHandle.setPath("/springcloud");
         springCloudRuleHandle.setTimeout(1000L);
         final RuleData rule = RuleData.builder()
+                .id("1")
                 .handle(GsonUtils.getInstance().toJson(springCloudRuleHandle))
                 .build();
         SpringCloudPluginDataHandler.RULE_CACHED.get().cachedHandle(CacheKeyUtils.INST.getKey(rule), springCloudRuleHandle);
@@ -120,7 +145,12 @@ public class SpringCloudPluginTest {
         shenyuContext.setRealUrl("http://localhost/test");
         shenyuContext.setHttpMethod(HttpMethod.GET.name());
         exchange.getAttributes().put(Constants.CONTEXT, shenyuContext);
-        StepVerifier.create(springCloudPlugin.doExecute(exchange, chain, selectorData, rule)).expectSubscription().verifyComplete();
+        assertThrows(NullPointerException.class, () -> {
+            StepVerifier.create(springCloudPlugin.doExecute(exchange, chain, selectorData, rule)).expectSubscription().verifyComplete();
+        });
+
+        Mono<Void> complete = springCloudPlugin.doExecute(exchange, chain, selector, rule);
+        assertThrows(NullPointerException.class, () -> StepVerifier.create(complete).expectSubscription().verifyComplete());
     }
 
     @Test
@@ -213,5 +243,17 @@ public class SpringCloudPluginTest {
         exchange.getAttributes().put(Constants.CONTEXT, shenyuContext);
         Mono<Void> execute = springCloudPlugin.doExecute(exchange, chain, selectorData, rule);
         StepVerifier.create(execute).expectSubscription().verifyComplete();
+    }
+
+    @Test
+    public void testHandleSelectorIfNull() {
+        Assertions.assertEquals(springCloudPlugin.handleSelectorIfNull("SpringCloud", exchange, chain).getClass(),
+                WebFluxResultUtils.noSelectorResult("SpringCloud", exchange).getClass());
+    }
+
+    @Test
+    public void testHandleRuleIfNull() {
+        Assertions.assertEquals(springCloudPlugin.handleRuleIfNull("SpringCloud", exchange, chain).getClass(),
+                WebFluxResultUtils.noRuleResult("SpringCloud", exchange).getClass());
     }
 }

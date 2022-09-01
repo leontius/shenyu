@@ -19,7 +19,7 @@ package org.apache.shenyu.plugin.hystrix.command;
 
 import com.netflix.hystrix.HystrixCommand;
 import org.apache.shenyu.plugin.api.ShenyuPluginChain;
-import org.apache.shenyu.plugin.base.utils.UriUtils;
+import org.apache.shenyu.common.utils.UriUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.server.ServerWebExchange;
@@ -83,5 +83,15 @@ public class HystrixCommandOnThread extends HystrixCommand<Mono<Void>> implement
     @Override
     public URI getCallBackUri() {
         return callBackUri;
+    }
+
+    @Override
+    public void removeCommandKey(final String commandKey) {
+        executionSemaphorePerCircuit.remove(commandKey);
+    }
+
+    @Override
+    public void cleanCommand() {
+        executionSemaphorePerCircuit.clear();
     }
 }

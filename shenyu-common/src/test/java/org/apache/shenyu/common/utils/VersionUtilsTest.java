@@ -17,9 +17,9 @@
 
 package org.apache.shenyu.common.utils;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
  * Test cases for VersionUtils.
@@ -40,7 +40,7 @@ public final class VersionUtilsTest {
     
     @Test
     public void testFromCodeSource() throws ClassNotFoundException {
-        String version = VersionUtils.getVersion(Class.forName("ch.qos.logback.classic.db.DBAppender"), "2.0.2");
+        String version = VersionUtils.getVersion(Class.forName("ch.qos.logback.classic.db.names.SimpleDBNameResolver"), "2.0.2");
         assertNotNull(version);
     }
 

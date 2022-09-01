@@ -17,15 +17,15 @@
 
 package org.apache.shenyu.loadbalancer.spi;
 
-import org.apache.shenyu.loadbalancer.entity.Upstream;
-import org.apache.shenyu.spi.Join;
-
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.SortedMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.stream.IntStream;
+import org.apache.shenyu.loadbalancer.entity.Upstream;
+import org.apache.shenyu.spi.Join;
 
 /**
  * hash algorithm impl.
@@ -33,18 +33,26 @@ import java.util.concurrent.ConcurrentSkipListMap;
 @Join
 public class HashLoadBalancer extends AbstractLoadBalancer {
 
+    /**
+     * virtual node used to solve unbalanced load.
+     */
     private static final int VIRTUAL_NODE_NUM = 5;
 
+    /**
+     * consistent hash with virtual node to select upstream.
+     *
+     * @param upstreamList the upstream list
+     * @param ip           the ip
+     * @return selected upstream
+     */
     @Override
     public Upstream doSelect(final List<Upstream> upstreamList, final String ip) {
         final ConcurrentSkipListMap<Long, Upstream> treeMap = new ConcurrentSkipListMap<>();
-        for (Upstream upstream : upstreamList) {
-            for (int i = 0; i < VIRTUAL_NODE_NUM; i++) {
-                long addressHash = hash("SHENYU-" + upstream.getUrl() + "-HASH-" + i);
-                treeMap.put(addressHash, upstream);
-            }
-        }
-        long hash = hash(String.valueOf(ip));
+        upstreamList.forEach(upstream -> IntStream.range(0, VIRTUAL_NODE_NUM).forEach(i -> {
+            long addressHash = hash("SHENYU-" + upstream.getUrl() + "-HASH-" + i);
+            treeMap.put(addressHash, upstream);
+        }));
+        long hash = hash(ip);
         SortedMap<Long, Upstream> lastRing = treeMap.tailMap(hash);
         if (!lastRing.isEmpty()) {
             return lastRing.get(lastRing.firstKey());

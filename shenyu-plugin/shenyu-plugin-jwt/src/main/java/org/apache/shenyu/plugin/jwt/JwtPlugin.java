@@ -17,13 +17,16 @@
 
 package org.apache.shenyu.plugin.jwt;
 
+import io.jsonwebtoken.Jwt;
 import io.jsonwebtoken.JwtParser;
+import io.jsonwebtoken.JwtParserBuilder;
 import io.jsonwebtoken.Jwts;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.shenyu.common.dto.RuleData;
 import org.apache.shenyu.common.dto.SelectorData;
+import org.apache.shenyu.common.dto.convert.rule.impl.JwtRuleHandle;
 import org.apache.shenyu.common.enums.PluginEnum;
-import org.apache.shenyu.common.utils.CollectionUtils;
+import org.apache.shenyu.common.utils.GsonUtils;
 import org.apache.shenyu.plugin.api.ShenyuPluginChain;
 import org.apache.shenyu.plugin.api.result.ShenyuResultEnum;
 import org.apache.shenyu.plugin.api.result.ShenyuResultWrap;
@@ -33,11 +36,14 @@ import org.apache.shenyu.plugin.jwt.config.JwtConfig;
 import org.apache.shenyu.plugin.base.AbstractShenyuPlugin;
 import org.apache.shenyu.plugin.jwt.exception.ThrowingFunction;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Jwt Plugin.
@@ -53,22 +59,25 @@ public class JwtPlugin extends AbstractShenyuPlugin {
         JwtConfig jwtConfig = Singleton.INST.get(JwtConfig.class);
         String authorization = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         String token = exchange.getRequest().getHeaders().getFirst(TOKEN);
-        // filter path
-        String path = exchange.getRequest().getURI().getPath();
-        List<String> filterPath = jwtConfig.getFilterPath();
-        if (CollectionUtils.isNotEmpty(filterPath)) {
-            if (filterPath.contains(path)) {
-                return chain.execute(exchange);
-            }
-        }
+
         // check secreteKey
         if (StringUtils.isEmpty(jwtConfig.getSecretKey())) {
-            Object error = ShenyuResultWrap.error(ShenyuResultEnum.SECRET_KEY_MUST_BE_CONFIGURED.getCode(), ShenyuResultEnum.SECRET_KEY_MUST_BE_CONFIGURED.getMsg(), null);
+            Object error = ShenyuResultWrap.error(exchange, ShenyuResultEnum.SECRET_KEY_MUST_BE_CONFIGURED);
             return WebFluxResultUtils.result(exchange, error);
         }
+
         // compatible processing
         String finalAuthorization = compatible(token, authorization);
-        return checkAuthorization(exchange, chain, finalAuthorization, jwtConfig.getSecretKey());
+        Map<String, Object> jwtBody = checkAuthorization(finalAuthorization, jwtConfig.getSecretKey());
+        if (jwtBody != null) {
+            JwtRuleHandle ruleHandle = GsonUtils.getInstance().fromJson(rule.getHandle(), JwtRuleHandle.class);
+            if (ruleHandle == null) {
+                return chain.execute(exchange);
+            }
+            return chain.execute(converter(exchange, jwtBody, ruleHandle.getConverter()));
+        }
+        Object error = ShenyuResultWrap.error(exchange, ShenyuResultEnum.ERROR_TOKEN);
+        return WebFluxResultUtils.result(exchange, error);
     }
 
     @Override
@@ -81,6 +90,12 @@ public class JwtPlugin extends AbstractShenyuPlugin {
         return PluginEnum.JWT.getCode();
     }
 
+    /**
+     * Both are compatible.
+     * @param token header of token
+     * @param authorization header of authorization
+     * @return the authorization after processing
+     */
     private String compatible(final String token, final String authorization) {
         String finalAuthorization;
         if (StringUtils.isNotEmpty(token)) {
@@ -90,22 +105,97 @@ public class JwtPlugin extends AbstractShenyuPlugin {
         } else {
             return null;
         }
-        return finalAuthorization.contains(AUTH2_TOKEN) ? finalAuthorization.split(" ")[1] : finalAuthorization;
+        return isAuth2(finalAuthorization) ? finalAuthorization.split(" ")[1] : finalAuthorization;
     }
 
-    private Mono<Void> checkAuthorization(final ServerWebExchange exchange,
-                                          final ShenyuPluginChain chain,
-                                          final String authorization,
-                                          final String secretKey) {
-        Object error = ShenyuResultWrap.error(ShenyuResultEnum.ERROR_TOKEN.getCode(), ShenyuResultEnum.ERROR_TOKEN.getMsg(), null);
-        if (StringUtils.isEmpty(authorization)) {
-            return WebFluxResultUtils.result(exchange, error);
-        }
-        JwtParser jwtParser = Jwts.parser();
-        if (jwtParser.isSigned(authorization)) {
-            jwtParser.setSigningKey(secretKey.getBytes(StandardCharsets.UTF_8));
-            return ThrowingFunction.wrap(() -> jwtParser.parse(authorization)) == null ? WebFluxResultUtils.result(exchange, error) : chain.execute(exchange);
-        }
-        return WebFluxResultUtils.result(exchange, error);
+    private boolean isAuth2(final String authorization) {
+        return authorization.contains(AUTH2_TOKEN);
     }
+
+    /**
+     * check Authorization.
+     * @param authorization the authorization after processing
+     * @param secretKey secretKey of authorization
+     * @return Map
+     */
+    private Map<String, Object> checkAuthorization(final String authorization,
+                                                   final String secretKey) {
+
+        if (StringUtils.isEmpty(authorization)) {
+            return null;
+        }
+        JwtParserBuilder jwtParserBuilder = Jwts.parserBuilder();
+        JwtParser jwtParser = jwtParserBuilder.build();
+        if (jwtParser.isSigned(authorization)) {
+            jwtParserBuilder.setSigningKey(secretKey.getBytes(StandardCharsets.UTF_8));
+            JwtParser jwtParserExec = jwtParserBuilder.build();
+            Jwt jwt = ThrowingFunction.wrap(() -> jwtParserExec.parse(authorization));
+            if (jwt == null) {
+                return null;
+            }
+            return (Map<String, Object>) jwt.getBody();
+        }
+        return null;
+    }
+
+    /**
+     * The parameters in token are converted to request header.
+     *
+     * @param exchange exchange
+     * @return ServerWebExchange exchange.
+     */
+    private ServerWebExchange converter(final ServerWebExchange exchange,
+                                        final Map<String, Object> jwtBody,
+                                        final List<JwtRuleHandle.Convert> converters) {
+        ServerHttpRequest modifiedRequest = exchange.getRequest().mutate().headers(httpHeaders -> this.addHeader(httpHeaders, jwtBody, converters)).build();
+
+        return exchange.mutate().request(modifiedRequest).build();
+    }
+
+    /**
+     * add header.
+     *
+     * @param headers headers
+     * @param body body
+     * @param converters converters
+     */
+    private void addHeader(final HttpHeaders headers,
+                           final Map<String, Object> body,
+                           final List<JwtRuleHandle.Convert> converters) {
+        for (JwtRuleHandle.Convert converter : converters) {
+            if (converter.getJwtVal().contains(".")) {
+                headers.add(converter.getHeaderVal(), parse(body, converter.getJwtVal().split("\\."), new AtomicInteger(0)));
+            } else {
+                headers.add(converter.getHeaderVal(), String.valueOf(body.get(converter.getJwtVal())));
+            }
+        }
+    }
+
+    /**
+     * Parsing multi-level tokens.
+     *
+     * @param body token
+     * @param split jwt of key
+     * @param deep level default 0
+     * @return token of val
+     */
+    private String parse(final Map<String, Object> body,
+                        final String[] split,
+                        final AtomicInteger deep) {
+        for (Map.Entry<String, Object> entry : body.entrySet()) {
+
+            if (deep.get() == split.length - 1) {
+                return String.valueOf(body.get(split[deep.get()]));
+            }
+
+            if (entry.getKey().equals(split[deep.get()])) {
+                if (entry.getValue() instanceof Map) {
+                    deep.incrementAndGet();
+                    return parse((Map<String, Object>) entry.getValue(), split, deep);
+                }
+            }
+        }
+        return String.valueOf(body.get(split[deep.get()]));
+    }
+
 }

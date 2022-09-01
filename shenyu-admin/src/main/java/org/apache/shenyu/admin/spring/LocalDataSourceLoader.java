@@ -46,7 +46,7 @@ import java.util.List;
  * for execute schema sql file.
  */
 @Component
-@ConditionalOnExpression("'${shenyu.database.dialect}' == 'mysql' or '${shenyu.database.dialect}' == 'h2'")
+@ConditionalOnExpression("'${shenyu.database.dialect}' == 'h2'")
 public class LocalDataSourceLoader implements InstantiationAwareBeanPostProcessor {
 
     private static final Logger LOG = LoggerFactory.getLogger(LocalDataSourceLoader.class);
@@ -55,7 +55,7 @@ public class LocalDataSourceLoader implements InstantiationAwareBeanPostProcesso
 
     @Resource
     private DataBaseProperties dataBaseProperties;
-    
+
     @Override
     public Object postProcessAfterInitialization(@NonNull final Object bean, final String beanName) throws BeansException {
         if ((bean instanceof DataSourceProperties) && dataBaseProperties.getInitEnable()) {
@@ -84,6 +84,9 @@ public class LocalDataSourceLoader implements InstantiationAwareBeanPostProcesso
             // doesn't print logger
             runner.setLogWriter(null);
             runner.setAutoCommit(true);
+            runner.setFullLineDelimiter(false);
+            runner.setSendFullScript(false);
+            runner.setStopOnError(false);
             Resources.setCharset(StandardCharsets.UTF_8);
             List<String> initScripts = Splitter.on(";").splitToList(script);
             for (String sqlScript : initScripts) {

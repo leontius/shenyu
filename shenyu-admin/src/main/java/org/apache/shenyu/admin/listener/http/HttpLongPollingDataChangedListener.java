@@ -56,7 +56,6 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * HTTP long polling, which blocks the client's request thread
@@ -76,8 +75,6 @@ public class HttpLongPollingDataChangedListener extends AbstractDataChangedListe
     private static final String X_FORWARDED_FOR = "X-Forwarded-For";
 
     private static final String X_FORWARDED_FOR_SPLIT_SYMBOL = ",";
-
-    private static final ReentrantLock LOCK = new ReentrantLock();
 
     /**
      * Blocked client.
@@ -106,21 +103,13 @@ public class HttpLongPollingDataChangedListener extends AbstractDataChangedListe
         scheduler.scheduleWithFixedDelay(() -> {
             LOG.info("http sync strategy refresh config start.");
             try {
-                this.refreshLocalCache();
+                super.refreshLocalCache();
                 LOG.info("http sync strategy refresh config success.");
             } catch (Exception e) {
                 LOG.error("http sync strategy refresh config error!", e);
             }
         }, syncInterval, syncInterval, TimeUnit.MILLISECONDS);
         LOG.info("http sync strategy refresh interval: {}ms", syncInterval);
-    }
-
-    private void refreshLocalCache() {
-        this.updateAppAuthCache();
-        this.updatePluginCache();
-        this.updateRuleCache();
-        this.updateSelectorCache();
-        this.updateMetaDataCache();
     }
 
     /**
@@ -213,30 +202,19 @@ public class HttpLongPollingDataChangedListener extends AbstractDataChangedListe
         // the lastModifyTime before client, then the local cache needs to be updated.
         // Considering the concurrency problem, admin must lock,
         // otherwise it may cause the request from shenyu-web to update the cache concurrently, causing excessive db pressure
-        boolean locked = false;
-        try {
-            locked = LOCK.tryLock(5, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return true;
+        ConfigDataCache latest = CACHE.get(serverCache.getGroup());
+        if (latest != serverCache) {
+            return !StringUtils.equals(clientMd5, latest.getMd5());
         }
-        if (locked) {
-            try {
-                ConfigDataCache latest = CACHE.get(serverCache.getGroup());
-                if (latest != serverCache) {
-                    // the cache of admin was updated. if the md5 value is the same, there's no need to update.
-                    return !StringUtils.equals(clientMd5, latest.getMd5());
-                }
-                // load cache from db.
-                this.refreshLocalCache();
-                latest = CACHE.get(serverCache.getGroup());
+        synchronized (this) {
+            latest = CACHE.get(serverCache.getGroup());
+            if (latest != serverCache) {
                 return !StringUtils.equals(clientMd5, latest.getMd5());
-            } finally {
-                LOCK.unlock();
             }
+            super.refreshLocalCache();
+            latest = CACHE.get(serverCache.getGroup());
+            return !StringUtils.equals(clientMd5, latest.getMd5());
         }
-        // not locked, the client need to be updated.
-        return true;
     }
 
     /**

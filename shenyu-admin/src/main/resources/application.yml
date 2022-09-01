@@ -26,11 +26,9 @@ spring:
     enabled: true
     prefix: classpath:/static/
     suffix: .html
-  datasource:
-    url: jdbc:mysql://localhost:3306/shenyu?useUnicode=true&characterEncoding=utf-8&useSSL=false
-    username: root
-    password:
-    driver-class-name: com.mysql.jdbc.Driver
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
 
 mybatis:
   config-location: classpath:/mybatis/mybatis-config.xml
@@ -47,13 +45,11 @@ shenyu:
       zombieCheckTimes: 5
       scheduledTime: 10
       nacosNameSpace: ShenyuRegisterCenter
-  database:
-    dialect: mysql
-    init_script: "sql-script/mysql/schema.sql"
-    init_enable: true
   sync:
     websocket:
       enabled: true
+      messageMaxSize: 10240
+      allowOrigins: ws://localhost:9095;ws://localhost:9195;
 #      zookeeper:
 #        url: localhost:2181
 #        sessionTimeout: 5000
@@ -75,10 +71,6 @@ shenyu:
 #      url: http://localhost:2379
 #    consul:
 #      url: http://localhost:8500
-  aes:
-    secret:
-      key: 2095132720951327
-      iv: 6075877187097700
   ldap:
     enabled: false
     url: ldap://xxxx:xxx
@@ -95,11 +87,8 @@ shenyu:
       - /favicon.*
       - /static/**
       - /index**
-      - /plugin
-      - /platform/**
+      - /platform/login
       - /websocket
-      - /configs/**
-      - /shenyu-client/**
       - /error
       - /actuator/health
       - /swagger-ui.html

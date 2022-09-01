@@ -18,10 +18,12 @@
 package org.apache.shenyu.springboot.starter.client.alibaba.dubbo;
 
 import org.apache.shenyu.client.alibaba.dubbo.AlibabaDubboServiceBeanListener;
+import org.apache.shenyu.common.enums.RpcTypeEnum;
 import org.apache.shenyu.register.client.api.ShenyuClientRegisterRepository;
-import org.apache.shenyu.register.common.config.ShenyuRegisterCenterConfig;
+import org.apache.shenyu.register.common.config.ShenyuClientConfig;
 import org.apache.shenyu.springboot.starter.client.common.config.ShenyuClientCommonBeanConfiguration;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -30,17 +32,19 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 @ImportAutoConfiguration(ShenyuClientCommonBeanConfiguration.class)
+@ConditionalOnProperty(value = "shenyu.register.enabled", matchIfMissing = true, havingValue = "true")
 public class ShenyuAlibabaDubboClientConfiguration {
     
     /**
      * Alibaba dubbo service bean listener.
      *
-     * @param config the config
-     * @param shenyuClientRegisterRepository the shenyuClientRegisterRepository
-     * @return the alibaba dubbo service bean post processor
+     * @param clientConfig the client config
+     * @param shenyuClientRegisterRepository the shenyu client register repository
+     * @return the alibaba dubbo service bean listener
      */
     @Bean
-    public AlibabaDubboServiceBeanListener alibabaDubboServiceBeanListener(final ShenyuRegisterCenterConfig config, final ShenyuClientRegisterRepository shenyuClientRegisterRepository) {
-        return new AlibabaDubboServiceBeanListener(config, shenyuClientRegisterRepository);
+    public AlibabaDubboServiceBeanListener alibabaDubboServiceBeanListener(final ShenyuClientConfig clientConfig,
+                                                                           final ShenyuClientRegisterRepository shenyuClientRegisterRepository) {
+        return new AlibabaDubboServiceBeanListener(clientConfig.getClient().get(RpcTypeEnum.DUBBO.getName()), shenyuClientRegisterRepository);
     }
 }

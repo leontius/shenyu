@@ -18,13 +18,14 @@
 package org.apache.shenyu.admin.service;
 
 import org.apache.shenyu.admin.model.dto.DashboardUserDTO;
+import org.apache.shenyu.admin.model.dto.DashboardUserModifyPasswordDTO;
 import org.apache.shenyu.admin.model.page.CommonPager;
 import org.apache.shenyu.admin.model.query.DashboardUserQuery;
 import org.apache.shenyu.admin.model.vo.DashboardUserEditVO;
 import org.apache.shenyu.admin.model.vo.DashboardUserVO;
 import org.apache.shenyu.admin.model.vo.LoginDashboardUserVO;
 
-import java.util.List;
+import java.util.Set;
 
 /**
  * this is dashboard user service.
@@ -38,6 +39,22 @@ public interface DashboardUserService {
      * @return rows
      */
     int createOrUpdate(DashboardUserDTO dashboardUserDTO);
+    
+    /**
+     * create dashboard user.
+     *
+     * @param dashboardUserDTO {@linkplain DashboardUserDTO}
+     * @return rows
+     */
+    int create(DashboardUserDTO dashboardUserDTO);
+    
+    /**
+     *  update dashboard user.
+     *
+     * @param dashboardUserDTO {@linkplain DashboardUserDTO}
+     * @return rows
+     */
+    int update(DashboardUserDTO dashboardUserDTO);
 
     /**
      * delete dashboard users.
@@ -45,7 +62,7 @@ public interface DashboardUserService {
      * @param ids primary key.
      * @return rows
      */
-    int delete(List<String> ids);
+    int delete(Set<String> ids);
 
     /**
      * find dashboard user by id.
@@ -88,4 +105,12 @@ public interface DashboardUserService {
      * @return {@linkplain LoginDashboardUserVO}
      */
     LoginDashboardUserVO login(String userName, String password);
+
+    /**
+     * modify password.
+     *
+     * @param dashboardUserModifyPasswordDTO {@linkplain DashboardUserModifyPasswordDTO}
+     * @return rows
+     */
+    int modifyPassword(DashboardUserModifyPasswordDTO dashboardUserModifyPasswordDTO);
 }

@@ -29,6 +29,20 @@ management:
       enabled: false
 
 shenyu:
+  netty:
+    tcp:
+      selectCount: 1
+      workerCount: 4
+      connectTimeoutMillis: 10000
+      writeBufferHighWaterMark: 65536
+      writeBufferLowWaterMark: 32768
+      writeSpinCount: 16
+      autoRead: true
+      tcpNodelay: true
+      soKeepalive: false
+      soReuseaddr: false
+      soLinger: -1
+      soBacklog: 128
   switchConfig:
     local: true
   cross:
@@ -36,11 +50,17 @@ shenyu:
   sync:
     websocket:
       urls: ws://localhost:9095/websocket
+      allowOrigin: ws://localhost:9195
   exclude:
     enabled: true
     paths:
       - /favicon.ico
       - /actuator/health
+  local:
+    enabled: true
+    sha512Key: "BA3253876AED6BC22D4A6FF53D8406C6AD864195ED144AB5C87621B6C233B548BAEAE6956DF346EC8C17F5EA10F35EE3CBC514797ED7DDD3145464E2A0BAB413"
+  sharedPool:
+    enable: true
 
 logging:
   level:

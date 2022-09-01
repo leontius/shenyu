@@ -18,6 +18,9 @@
 package org.apache.shenyu.plugin.request;
 
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Lists;
+import org.apache.commons.collections4.ListUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.shenyu.common.dto.RuleData;
 import org.apache.shenyu.common.dto.SelectorData;
 import org.apache.shenyu.common.dto.convert.rule.RequestHandle;
@@ -28,28 +31,33 @@ import org.apache.shenyu.common.enums.PluginEnum;
 import org.apache.shenyu.plugin.api.ShenyuPluginChain;
 import org.apache.shenyu.plugin.base.utils.CacheKeyUtils;
 import org.apache.shenyu.plugin.request.handler.RequestPluginHandler;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.internal.util.collections.Sets;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpCookie;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
+import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -58,7 +66,7 @@ import static org.mockito.Mockito.when;
 /**
  * Request plugin test.
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
 public class RequestPluginTest {
     @Mock
     private ShenyuPluginChain chain;
@@ -69,7 +77,7 @@ public class RequestPluginTest {
 
     private RuleData ruleData;
 
-    @Before
+    @BeforeEach
     public void setup() {
         this.exchange = MockServerWebExchange.from(MockServerHttpRequest
                 .get("localhost")
@@ -123,24 +131,46 @@ public class RequestPluginTest {
         assertNotNull(request);
         HttpHeaders httpHeaders = request.getHeaders();
         assertNotNull(httpHeaders);
-        assertNotNull(httpHeaders.containsKey("addKey"));
-        assertNotNull(httpHeaders.get("addKey").size() == 1 && "addValue".equals(httpHeaders.get("addKey")));
-        assertNotNull(httpHeaders.containsKey("newKey"));
-        assertNotNull(httpHeaders.get("newKey").size() == 1 && "oldValue".equals(httpHeaders.get("newKey")));
-        assertNotNull(httpHeaders.containsKey("setKey"));
-        assertNotNull(httpHeaders.get("setKey").size() == 1 && "newValue".equals(httpHeaders.get("setKey")));
+        assertTrue(checkMapSizeAndEqualVal(httpHeaders, "addKey", "addValue"));
+        assertTrue(checkMapSizeAndEqualVal(httpHeaders, "newKey", "oldValue"));
+        assertTrue(checkMapSizeAndEqualVal(httpHeaders, "setKey", "newValue"));
         assertFalse(httpHeaders.containsKey("removeKey"));
         assertTrue(httpHeaders.containsKey(HttpHeaders.COOKIE));
 
+        LinkedMultiValueMap<String, String> cookies = getCookieMapFromHeader(httpHeaders);
+        assertTrue(checkMapSizeAndEqualVal(cookies, "addKey", "addValue"));
+        assertTrue(checkMapSizeAndEqualVal(cookies, "newKey", "oldValue"));
+        assertTrue(checkMapSizeAndEqualVal(cookies, "setKey", "newValue"));
+        assertFalse(cookies.containsKey("removeKey"));
+
         MultiValueMap<String, String> queryParams = request.getQueryParams();
         assertNotNull(queryParams);
-        assertNotNull(queryParams.containsKey("addKey"));
-        assertNotNull(queryParams.get("addKey").size() == 1 && "addValue".equals(queryParams.get("addKey")));
-        assertNotNull(queryParams.containsKey("newKey"));
-        assertNotNull(queryParams.get("newKey").size() == 1 && "oldValue".equals(queryParams.get("newKey")));
-        assertNotNull(queryParams.containsKey("setKey"));
-        assertNotNull(queryParams.get("setKey").size() == 1 && "newValue".equals(queryParams.get("setKey")));
+        assertTrue(checkMapSizeAndEqualVal(queryParams, "addKey", "addValue"));
+        assertTrue(checkMapSizeAndEqualVal(queryParams, "newKey", "oldValue"));
+        assertTrue(checkMapSizeAndEqualVal(queryParams, "setKey", "newValue"));
         assertFalse(queryParams.containsKey("removeKey"));
+    }
+
+    /**
+     * test MultiValueMap whether contain the key and the value.
+     */
+    private boolean checkMapSizeAndEqualVal(final MultiValueMap<String, String> headersOrParams, final String key, final String value) {
+        if (!headersOrParams.containsKey(key)) {
+            return false;
+        }
+        if (headersOrParams.get(key).size() != 1) {
+            return false;
+        }
+        return value.equals(headersOrParams.get(key).get(0));
+    }
+
+    private LinkedMultiValueMap<String, String> getCookieMapFromHeader(final HttpHeaders httpHeaders) {
+        List<String> cookies = httpHeaders.get(HttpHeaders.COOKIE);
+        return new LinkedMultiValueMap<>(ListUtils.emptyIfNull(cookies).stream().map(cookiePair -> cookiePair.split(";"))
+                .flatMap(s ->
+                        Arrays.stream(s).filter(cookie -> cookie.split("=").length == 2)
+                                .map(cookie -> Pair.of(cookie.split("=")[0].trim(), Lists.newArrayList(cookie.split("=")[1].trim()))))
+                .collect(Collectors.toMap(Pair::getKey, Pair::getValue, (k, v) -> k)));
     }
 
     @Test

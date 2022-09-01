@@ -17,15 +17,18 @@
 
 package org.apache.shenyu.springboot.starter.plugin.sign;
 
+import org.apache.shenyu.plugin.base.handler.PluginDataHandler;
 import org.apache.shenyu.plugin.sign.api.DefaultSignProvider;
 import org.apache.shenyu.plugin.sign.api.SignService;
 import org.apache.shenyu.plugin.api.ShenyuPlugin;
 import org.apache.shenyu.plugin.sign.api.SignProvider;
 import org.apache.shenyu.plugin.sign.SignPlugin;
+import org.apache.shenyu.plugin.sign.handler.SignPluginDataHandler;
 import org.apache.shenyu.plugin.sign.service.DefaultSignService;
 import org.apache.shenyu.plugin.sign.subscriber.SignAuthDataSubscriber;
 import org.apache.shenyu.sync.data.api.AuthDataSubscriber;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.SearchStrategy;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -34,10 +37,11 @@ import org.springframework.context.annotation.Configuration;
  * The type Sign plugin configuration.
  */
 @Configuration
+@ConditionalOnProperty(value = {"shenyu.plugins.sign.enabled"}, havingValue = "true", matchIfMissing = true)
 public class SignPluginConfiguration {
     
     /**
-     * Sign service sign service.
+     * Sign service.
      *
      * @return the sign service
      */
@@ -59,7 +63,7 @@ public class SignPluginConfiguration {
     }
     
     /**
-     * sign plugin shenyu plugin.
+     * sign plugin.
      *
      * @param signService the sign service
      * @return the shenyu plugin
@@ -77,5 +81,15 @@ public class SignPluginConfiguration {
     @Bean
     public AuthDataSubscriber signAuthDataSubscriber() {
         return new SignAuthDataSubscriber();
+    }
+
+    /**
+     * sign plugin data handler.
+     *
+     * @return the plugin data handler
+     */
+    @Bean
+    public PluginDataHandler signPluginDataHandler() {
+        return new SignPluginDataHandler();
     }
 }

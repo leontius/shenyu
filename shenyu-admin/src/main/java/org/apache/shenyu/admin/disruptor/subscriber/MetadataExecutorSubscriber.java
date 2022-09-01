@@ -17,23 +17,23 @@
 
 package org.apache.shenyu.admin.disruptor.subscriber;
 
-import org.apache.shenyu.admin.service.register.ShenyuClientRegisterServiceFactory;
+import org.apache.shenyu.admin.service.register.ShenyuClientRegisterService;
 import org.apache.shenyu.register.common.dto.MetaDataRegisterDTO;
 import org.apache.shenyu.register.common.subsriber.ExecutorTypeSubscriber;
 import org.apache.shenyu.register.common.type.DataType;
 
 import java.util.Collection;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Optional;
 
 /**
  * The type Metadata executor subscriber.
  */
 public class MetadataExecutorSubscriber implements ExecutorTypeSubscriber<MetaDataRegisterDTO> {
 
-    private final Map<String, ShenyuClientRegisterServiceFactory> shenyuClientRegisterService;
+    private final Map<String, ShenyuClientRegisterService> shenyuClientRegisterService;
 
-    public MetadataExecutorSubscriber(final Map<String, ShenyuClientRegisterServiceFactory> shenyuClientRegisterService) {
+    public MetadataExecutorSubscriber(final Map<String, ShenyuClientRegisterService> shenyuClientRegisterService) {
         this.shenyuClientRegisterService = shenyuClientRegisterService;
     }
 
@@ -44,12 +44,13 @@ public class MetadataExecutorSubscriber implements ExecutorTypeSubscriber<MetaDa
 
     @Override
     public void executor(final Collection<MetaDataRegisterDTO> metaDataRegisterDTOList) {
-        for (MetaDataRegisterDTO metaDataRegisterDTO : metaDataRegisterDTOList) {
-            ShenyuClientRegisterServiceFactory shenyuClientRegisterServiceFactory = shenyuClientRegisterService.get(metaDataRegisterDTO.getRpcType());
-            Objects.requireNonNull(shenyuClientRegisterServiceFactory);
-            synchronized (ShenyuClientRegisterServiceFactory.class) {
-                shenyuClientRegisterServiceFactory.register(metaDataRegisterDTO);
-            }
-        }
+        metaDataRegisterDTOList.forEach(meta -> {
+            Optional.ofNullable(this.shenyuClientRegisterService.get(meta.getRpcType()))
+                    .ifPresent(shenyuClientRegisterService -> {
+                        synchronized (shenyuClientRegisterService) {
+                            shenyuClientRegisterService.register(meta);
+                        }
+                    });
+        });
     }
 }

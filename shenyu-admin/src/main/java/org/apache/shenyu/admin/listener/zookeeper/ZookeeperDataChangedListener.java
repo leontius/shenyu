@@ -17,7 +17,7 @@
 
 package org.apache.shenyu.admin.listener.zookeeper;
 
-import org.I0Itec.zkclient.ZkClient;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.shenyu.admin.listener.DataChangedListener;
 import org.apache.shenyu.common.constant.DefaultPathConstants;
 import org.apache.shenyu.common.dto.AppAuthData;
@@ -27,7 +27,8 @@ import org.apache.shenyu.common.dto.RuleData;
 import org.apache.shenyu.common.dto.SelectorData;
 import org.apache.shenyu.common.enums.DataEventTypeEnum;
 import org.apache.shenyu.common.exception.ShenyuException;
-import org.apache.shenyu.common.utils.GsonUtils;
+import org.apache.shenyu.register.client.server.zookeeper.ZookeeperClient;
+import org.apache.zookeeper.CreateMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,9 +43,13 @@ public class ZookeeperDataChangedListener implements DataChangedListener {
 
     private static final Logger LOG = LoggerFactory.getLogger(ZookeeperDataChangedListener.class);
 
-    private final ZkClient zkClient;
+    private final ZookeeperClient zkClient;
 
-    public ZookeeperDataChangedListener(final ZkClient zkClient) {
+    private final Object ruleSyncObject = new Object();
+
+    private final Object selectorSyncObject = new Object();
+
+    public ZookeeperDataChangedListener(final ZookeeperClient zkClient) {
         this.zkClient = zkClient;
     }
 
@@ -96,12 +101,13 @@ public class ZookeeperDataChangedListener implements DataChangedListener {
             }
             //create or update
             insertZkNode(pluginPath, data);
+            LOG.debug("created path: {} with data: {}", pluginPath, data);
         }
     }
 
     @Override
     public void onSelectorChanged(final List<SelectorData> changed, final DataEventTypeEnum eventType) {
-        if (eventType == DataEventTypeEnum.REFRESH && !changed.isEmpty()) {
+        if (eventType == DataEventTypeEnum.REFRESH && CollectionUtils.isNotEmpty(changed)) {
             String selectorParentPath = DefaultPathConstants.buildSelectorParentPath(changed.get(0).getPluginName());
             deleteZkPathRecursive(selectorParentPath);
         }
@@ -111,16 +117,17 @@ public class ZookeeperDataChangedListener implements DataChangedListener {
                 deleteZkPath(selectorRealPath);
                 continue;
             }
-            String selectorParentPath = DefaultPathConstants.buildSelectorParentPath(data.getPluginName());
-            createZkNode(selectorParentPath);
             //create or update
-            insertZkNode(selectorRealPath, data);
+            synchronized (selectorSyncObject) {
+                insertZkNode(selectorRealPath, data);
+            }
+            LOG.debug("created path: {} with data: {}", selectorRealPath, data);
         }
     }
 
     @Override
     public void onRuleChanged(final List<RuleData> changed, final DataEventTypeEnum eventType) {
-        if (eventType == DataEventTypeEnum.REFRESH && !changed.isEmpty()) {
+        if (eventType == DataEventTypeEnum.REFRESH && CollectionUtils.isNotEmpty(changed)) {
             String selectorParentPath = DefaultPathConstants.buildRuleParentPath(changed.get(0).getPluginName());
             deleteZkPathRecursive(selectorParentPath);
         }
@@ -130,33 +137,27 @@ public class ZookeeperDataChangedListener implements DataChangedListener {
                 deleteZkPath(ruleRealPath);
                 continue;
             }
-            String ruleParentPath = DefaultPathConstants.buildRuleParentPath(data.getPluginName());
-            createZkNode(ruleParentPath);
             //create or update
-            insertZkNode(ruleRealPath, data);
+            synchronized (ruleSyncObject) {
+                insertZkNode(ruleRealPath, data);
+            }
+            LOG.debug("created path: {} with data: {}", ruleRealPath, data);
         }
     }
-    
+
     private void insertZkNode(final String path, final Object data) {
-        createZkNode(path);
-        zkClient.writeData(path, null == data ? "" : GsonUtils.getInstance().toJson(data));
+        zkClient.createOrUpdate(path, data, CreateMode.PERSISTENT);
     }
-    
-    private void createZkNode(final String path) {
-        if (!zkClient.exists(path)) {
-            zkClient.createPersistent(path, true);
-        }
-    }
-    
+
     private void deleteZkPath(final String path) {
-        if (zkClient.exists(path)) {
+        if (zkClient.isExist(path)) {
             zkClient.delete(path);
         }
     }
-    
-    private void deleteZkPathRecursive(final String path) { 
-        if (zkClient.exists(path)) {
-            zkClient.deleteRecursive(path);
+
+    private void deleteZkPathRecursive(final String path) {
+        if (zkClient.isExist(path)) {
+            zkClient.delete(path);
         }
     }
 }

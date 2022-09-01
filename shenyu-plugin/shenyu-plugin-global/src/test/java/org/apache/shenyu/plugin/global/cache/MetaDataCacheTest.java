@@ -18,12 +18,13 @@
 package org.apache.shenyu.plugin.global.cache;
 
 import org.apache.shenyu.common.dto.MetaData;
-import org.junit.Before;
-import org.junit.Test;
+import org.apache.shenyu.plugin.base.cache.MetaDataCache;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * The Test Case For MetaDataCache.
@@ -34,9 +35,10 @@ public final class MetaDataCacheTest {
 
     private MetaDataCache metaDataCache;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         metaData = MetaData.builder()
+                .id("1")
                 .path("/home")
                 .build();
         metaDataCache = MetaDataCache.getInstance();
@@ -51,7 +53,7 @@ public final class MetaDataCacheTest {
     public void testMetaDataCache() {
         assertNull(metaDataCache.obtain("/test"));
         metaDataCache.cache(this.metaData);
-        assertEquals(metaDataCache.obtain("/home").getPath(), "/home");
+        assertEquals("/home", metaDataCache.obtain("/home").getPath());
         metaDataCache.remove(this.metaData);
         assertNull(metaDataCache.obtain("/home"));
     }

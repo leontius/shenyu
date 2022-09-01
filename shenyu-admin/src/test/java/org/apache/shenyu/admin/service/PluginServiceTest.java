@@ -18,34 +18,30 @@
 package org.apache.shenyu.admin.service;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.shenyu.admin.mapper.PluginMapper;
+import org.apache.shenyu.admin.mapper.SelectorMapper;
 import org.apache.shenyu.admin.model.dto.BatchCommonDTO;
 import org.apache.shenyu.admin.model.dto.PluginDTO;
 import org.apache.shenyu.admin.model.entity.PluginDO;
-import org.apache.shenyu.admin.model.entity.RuleDO;
 import org.apache.shenyu.admin.model.entity.SelectorDO;
-import org.apache.shenyu.admin.mapper.PluginMapper;
-import org.apache.shenyu.admin.mapper.RuleConditionMapper;
-import org.apache.shenyu.admin.mapper.RuleMapper;
-import org.apache.shenyu.admin.mapper.SelectorConditionMapper;
-import org.apache.shenyu.admin.mapper.SelectorMapper;
 import org.apache.shenyu.admin.model.page.CommonPager;
 import org.apache.shenyu.admin.model.page.PageParameter;
 import org.apache.shenyu.admin.model.query.PluginQuery;
-import org.apache.shenyu.admin.model.query.RuleConditionQuery;
-import org.apache.shenyu.admin.model.query.RuleQuery;
-import org.apache.shenyu.admin.model.query.SelectorConditionQuery;
-import org.apache.shenyu.admin.model.query.SelectorQuery;
-import org.apache.shenyu.admin.service.impl.PluginServiceImpl;
 import org.apache.shenyu.admin.model.vo.PluginVO;
+import org.apache.shenyu.admin.service.impl.PluginServiceImpl;
+import org.apache.shenyu.admin.service.publish.PluginEventPublisher;
+import org.apache.shenyu.admin.utils.ShenyuResultMessage;
 import org.apache.shenyu.common.constant.AdminConstants;
 import org.apache.shenyu.common.dto.PluginData;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.assertj.core.util.Lists;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
-import org.springframework.context.ApplicationEventPublisher;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
@@ -53,10 +49,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -65,93 +61,80 @@ import static org.mockito.Mockito.when;
 /**
  * Test cases for PluginService.
  */
-@RunWith(MockitoJUnitRunner.Silent.class)
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public final class PluginServiceTest {
-
+    
     @InjectMocks
     private PluginServiceImpl pluginService;
-
+    
     @Mock
     private PluginMapper pluginMapper;
-
+    
     @Mock
     private SelectorMapper selectorMapper;
-
+    
     @Mock
-    private RuleMapper ruleMapper;
-
-    @Mock
-    private RuleConditionMapper ruleConditionMapper;
-
-    @Mock
-    private SelectorConditionMapper selectorConditionMapper;
-
-    @Mock
-    private ApplicationEventPublisher eventPublisher;
-
-    @Mock
-    private ResourceService resourceService;
-
-    @Before
+    private PluginEventPublisher modelDataEventPublisher;
+    
+    @BeforeEach
     public void setUp() {
-        pluginService = new PluginServiceImpl(pluginMapper, selectorMapper, selectorConditionMapper,
-                ruleMapper, ruleConditionMapper, eventPublisher, resourceService);
+        pluginService = new PluginServiceImpl(pluginMapper, modelDataEventPublisher);
     }
-
+    
     @Test
     public void testCreateOrUpdate() {
         publishEvent();
         testCreate();
         testUpdate();
-
-        testCreateShouldPluginNameIsExist();
-        testUpdateShouldPluginNameNotExistWithPluginDO();
-        testUpdateShouldPluginNameNotExistWithDiffId();
     }
-
+    
     @Test
     public void testDelete() {
-        PluginDO pluginDO = buildPluginDO("123");
-        when(pluginMapper.selectById("123")).thenReturn(pluginDO);
-        when(pluginMapper.delete("123")).thenReturn(1);
-
-        final List<String> ids = Collections.singletonList(pluginDO.getId());
-        testSelectorDelete();
-        assertEquals(pluginService.delete(ids), StringUtils.EMPTY);
+        List<PluginDO> plugins = Collections.singletonList(buildPluginDO("123"));
+        when(pluginMapper.selectByIds(Collections.singletonList("123"))).thenReturn(plugins);
+        when(pluginMapper.deleteByIds(Collections.singletonList("123"))).thenReturn(1);
+        
+        final List<SelectorDO> selectorDOList = new ArrayList<>();
+        selectorDOList.add(SelectorDO.builder().id("101").build());
+        when(selectorMapper.findByPluginIds(Collections.singletonList("101"))).thenReturn(selectorDOList);
+        assertEquals(StringUtils.EMPTY, pluginService.delete(Collections.singletonList("123")));
     }
-
+    
     @Test
     public void testDeleteShouldSysPluginIdNotExist() {
         when(pluginMapper.selectById(any())).thenReturn(null);
-
+        
         PluginDO pluginDO = buildPluginDO("123");
         final List<String> ids = Collections.singletonList(pluginDO.getId());
-        assertEquals(pluginService.delete(ids), AdminConstants.SYS_PLUGIN_ID_NOT_EXIST);
+        assertEquals(AdminConstants.SYS_PLUGIN_ID_NOT_EXIST, pluginService.delete(ids));
     }
-
+    
     @Test
     public void testEnable() {
+        
+        List<String> idList = Lists.list("123", "1234");
         publishEvent();
         BatchCommonDTO batchCommonDTO = new BatchCommonDTO();
         batchCommonDTO.setEnabled(false);
-        batchCommonDTO.setIds(Collections.singletonList("123"));
-        given(this.pluginMapper.updateEnable(any())).willReturn(1);
+        batchCommonDTO.setIds(idList);
+        given(this.pluginMapper.selectByIds(idList)).willReturn(Lists.list(buildPluginDO(), buildPluginDO()));
         assertThat(this.pluginService.enabled(batchCommonDTO.getIds(), batchCommonDTO.getEnabled()), equalTo(StringUtils.EMPTY));
     }
-
+    
     @Test
     public void testEnableShouldSysPluginIdNotExist() {
         when(pluginMapper.selectById(any())).thenReturn(null);
-
+        
         BatchCommonDTO batchCommonDTO = new BatchCommonDTO();
         batchCommonDTO.setEnabled(false);
         batchCommonDTO.setIds(Collections.singletonList("123"));
-
+        
         given(this.pluginMapper.updateEnable(any())).willReturn(1);
-
+        
         assertThat(this.pluginService.enabled(batchCommonDTO.getIds(), batchCommonDTO.getEnabled()), equalTo(AdminConstants.SYS_PLUGIN_ID_NOT_EXIST));
     }
-
+    
     @Test
     public void testFindById() {
         PluginDO pluginDO = buildPluginDO();
@@ -160,7 +143,7 @@ public final class PluginServiceTest {
         assertNotNull(pluginVO);
         assertEquals(pluginDO.getId(), pluginVO.getId());
     }
-
+    
     @Test
     public void testListByPage() {
         PageParameter pageParameter = new PageParameter();
@@ -177,7 +160,7 @@ public final class PluginServiceTest {
         final CommonPager<PluginVO> pluginDOCommonPager = this.pluginService.listByPage(pluginQuery);
         assertEquals(pluginDOCommonPager.getDataList().size(), pluginDOList.size());
     }
-
+    
     @Test
     public void testListAll() {
         PluginDO pluginDO = buildPluginDO("123");
@@ -187,81 +170,35 @@ public final class PluginServiceTest {
         assertNotNull(dataList);
         assertEquals(pluginDOList.size(), dataList.size());
     }
-
+    
     private void publishEvent() {
         PluginDO pluginDO = buildPluginDO();
         given(this.pluginMapper.selectById("123")).willReturn(pluginDO);
     }
-
+    
     private void testCreate() {
         PluginDTO pluginDTO = buildPluginDTO("");
+        when(pluginMapper.nameExisted(pluginDTO.getName())).thenReturn(null);
         when(pluginMapper.insert(any())).thenReturn(1);
-        assertEquals(this.pluginService.createOrUpdate(pluginDTO), StringUtils.EMPTY);
+        assertEquals(ShenyuResultMessage.CREATE_SUCCESS, this.pluginService.createOrUpdate(pluginDTO));
     }
-
+    
     private void testUpdate() {
         PluginDO pluginDO = buildPluginDO();
         when(pluginMapper.selectByName(any())).thenReturn(pluginDO);
-
+        
         PluginDTO pluginDTO = new PluginDTO();
         pluginDTO.setId("123");
         pluginDTO.setName("test");
+        when(pluginMapper.nameExistedExclude(pluginDTO.getName(), Collections.singletonList(pluginDO.getId()))).thenReturn(null);
         when(pluginMapper.update(any())).thenReturn(1);
-        assertEquals(this.pluginService.createOrUpdate(pluginDTO), StringUtils.EMPTY);
+        assertEquals(ShenyuResultMessage.UPDATE_SUCCESS, this.pluginService.createOrUpdate(pluginDTO));
     }
-
-    private void testCreateShouldPluginNameIsExist() {
-        PluginDO pluginDO = buildPluginDO();
-        when(pluginMapper.selectByName(any())).thenReturn(pluginDO);
-
-        PluginDTO pluginDTO = buildPluginDTO("");
-        assertEquals(this.pluginService.createOrUpdate(pluginDTO), AdminConstants.PLUGIN_NAME_IS_EXIST);
-    }
-
-    private void testUpdateShouldPluginNameNotExistWithPluginDO() {
-        when(pluginMapper.selectByName(any())).thenReturn(null);
-
-        PluginDTO pluginDTO = buildPluginDTO("123");
-        assertEquals(this.pluginService.createOrUpdate(pluginDTO), AdminConstants.PLUGIN_NAME_NOT_EXIST);
-    }
-
-    private void testUpdateShouldPluginNameNotExistWithDiffId() {
-        PluginDO pluginDO = buildPluginDO();
-        when(pluginMapper.selectByName(any())).thenReturn(pluginDO);
-
-        PluginDTO pluginDTO = buildPluginDTO("456");
-        assertEquals(this.pluginService.createOrUpdate(pluginDTO), AdminConstants.PLUGIN_NAME_NOT_EXIST);
-    }
-
-    private void testSelectorDelete() {
-        final List<SelectorDO> selectorDOList = new ArrayList<>();
-        selectorDOList.add(SelectorDO.builder().id("101").build());
-        SelectorQuery selectorQuery = new SelectorQuery("123", null, null);
-        when(selectorMapper.selectByQuery(selectorQuery)).thenReturn(selectorDOList);
-
-        for (int i = 0; i < selectorDOList.size(); i++) {
-            SelectorDO selectorDO = selectorDOList.get(i);
-
-            final List<RuleDO> ruleDOList = new ArrayList<>();
-            ruleDOList.add(RuleDO.builder().id("202").build());
-            RuleQuery ruleQuery = new RuleQuery(selectorDO.getId(), null, null);
-            when(ruleMapper.selectByQuery(ruleQuery)).thenReturn(ruleDOList);
-
-            for (int j = 0; j < ruleDOList.size(); j++) {
-                RuleDO ruleDO = ruleDOList.get(i);
-                when(ruleMapper.delete(ruleDO.getId())).thenReturn(1);
-                when(ruleConditionMapper.deleteByQuery(new RuleConditionQuery(ruleDO.getId()))).thenReturn(1);
-            }
-
-            when(selectorMapper.delete(selectorDO.getId())).thenReturn(1);
-            when(selectorConditionMapper.deleteByQuery(new SelectorConditionQuery(selectorDO.getId()))).thenReturn(1);
-        }
-    }
-
+    
     private PluginDTO buildPluginDTO() {
         return buildPluginDTO("123");
     }
-
+    
     private PluginDTO buildPluginDTO(final String id) {
         PluginDTO pluginDTO = new PluginDTO();
         if (StringUtils.isNotBlank(id)) {
@@ -273,7 +210,7 @@ public final class PluginServiceTest {
         pluginDTO.setEnabled(true);
         return pluginDTO;
     }
-
+    
     private PluginDO buildPluginDO() {
         PluginDO pluginDO = PluginDO.buildPluginDO(buildPluginDTO());
         Timestamp now = Timestamp.valueOf(LocalDateTime.now());
@@ -281,7 +218,7 @@ public final class PluginServiceTest {
         pluginDO.setDateUpdated(now);
         return pluginDO;
     }
-
+    
     private PluginDO buildPluginDO(final String id) {
         PluginDTO pluginDTO = new PluginDTO();
         if (StringUtils.isNotBlank(id)) {

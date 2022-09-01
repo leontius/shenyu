@@ -22,13 +22,17 @@ import org.apache.shenyu.common.dto.PluginData;
 import org.apache.shenyu.common.dto.RuleData;
 import org.apache.shenyu.common.dto.SelectorData;
 import org.apache.shenyu.common.enums.DataEventTypeEnum;
+import org.apache.shenyu.common.enums.PluginHandlerEventEnum;
 import org.apache.shenyu.plugin.base.handler.PluginDataHandler;
 import org.apache.shenyu.sync.data.api.PluginDataSubscriber;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.lang.NonNull;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -40,7 +44,9 @@ public class CommonPluginDataSubscriber implements PluginDataSubscriber {
     private static final Logger LOG = LoggerFactory.getLogger(CommonPluginDataSubscriber.class);
     
     private final Map<String, PluginDataHandler> handlerMap;
-    
+
+    private ApplicationEventPublisher eventPublisher;
+
     /**
      * Instantiates a new Common plugin data subscriber.
      *
@@ -49,7 +55,19 @@ public class CommonPluginDataSubscriber implements PluginDataSubscriber {
     public CommonPluginDataSubscriber(final List<PluginDataHandler> pluginDataHandlerList) {
         this.handlerMap = pluginDataHandlerList.stream().collect(Collectors.toConcurrentMap(PluginDataHandler::pluginNamed, e -> e));
     }
-    
+
+    /**
+     * Instantiates a new Common plugin data subscriber.
+     *
+     * @param pluginDataHandlerList the plugin data handler list
+     * @param eventPublisher        eventPublisher is used to publish sort plugin event
+     */
+    public CommonPluginDataSubscriber(final List<PluginDataHandler> pluginDataHandlerList,
+                                      final ApplicationEventPublisher eventPublisher) {
+        this.handlerMap = pluginDataHandlerList.stream().collect(Collectors.toConcurrentMap(PluginDataHandler::pluginNamed, e -> e));
+        this.eventPublisher = eventPublisher;
+    }
+
     /**
      * Put extend plugin data handler.
      *
@@ -61,10 +79,10 @@ public class CommonPluginDataSubscriber implements PluginDataSubscriber {
         }
         for (PluginDataHandler handler : handlers) {
             String pluginNamed = handler.pluginNamed();
-            if (!handlerMap.containsKey(pluginNamed)) {
-                handlerMap.put(pluginNamed, handler);
+            handlerMap.computeIfAbsent(pluginNamed, name -> {
                 LOG.info("shenyu auto add extends plugin data handler name is :{}", pluginNamed);
-            }
+                return handler;
+            });
         }
     }
     
@@ -104,6 +122,7 @@ public class CommonPluginDataSubscriber implements PluginDataSubscriber {
     @Override
     public void refreshSelectorDataAll() {
         BaseDataCache.getInstance().cleanSelectorData();
+        MatchDataCache.getInstance().cleanSelectorData();
     }
     
     @Override
@@ -138,35 +157,94 @@ public class CommonPluginDataSubscriber implements PluginDataSubscriber {
     }
     
     private <T> void subscribeDataHandler(final T classData, final DataEventTypeEnum dataType) {
-        Optional.ofNullable(classData).ifPresent(data -> {
-            if (data instanceof PluginData) {
-                PluginData pluginData = (PluginData) data;
-                if (dataType == DataEventTypeEnum.UPDATE) {
-                    BaseDataCache.getInstance().cachePluginData(pluginData);
-                    Optional.ofNullable(handlerMap.get(pluginData.getName())).ifPresent(handler -> handler.handlerPlugin(pluginData));
-                } else if (dataType == DataEventTypeEnum.DELETE) {
-                    BaseDataCache.getInstance().removePluginData(pluginData);
-                    Optional.ofNullable(handlerMap.get(pluginData.getName())).ifPresent(handler -> handler.removePlugin(pluginData));
-                }
-            } else if (data instanceof SelectorData) {
-                SelectorData selectorData = (SelectorData) data;
-                if (dataType == DataEventTypeEnum.UPDATE) {
-                    BaseDataCache.getInstance().cacheSelectData(selectorData);
-                    Optional.ofNullable(handlerMap.get(selectorData.getPluginName())).ifPresent(handler -> handler.handlerSelector(selectorData));
-                } else if (dataType == DataEventTypeEnum.DELETE) {
-                    BaseDataCache.getInstance().removeSelectData(selectorData);
-                    Optional.ofNullable(handlerMap.get(selectorData.getPluginName())).ifPresent(handler -> handler.removeSelector(selectorData));
-                }
-            } else if (data instanceof RuleData) {
-                RuleData ruleData = (RuleData) data;
-                if (dataType == DataEventTypeEnum.UPDATE) {
-                    BaseDataCache.getInstance().cacheRuleData(ruleData);
-                    Optional.ofNullable(handlerMap.get(ruleData.getPluginName())).ifPresent(handler -> handler.handlerRule(ruleData));
-                } else if (dataType == DataEventTypeEnum.DELETE) {
-                    BaseDataCache.getInstance().removeRuleData(ruleData);
-                    Optional.ofNullable(handlerMap.get(ruleData.getPluginName())).ifPresent(handler -> handler.removeRule(ruleData));
-                }
-            }
-        });
+        if (dataType == DataEventTypeEnum.UPDATE) {
+            Optional.ofNullable(classData)
+                    .ifPresent(data -> updateCacheData(classData));
+        } else if (dataType == DataEventTypeEnum.DELETE) {
+            Optional.ofNullable(classData)
+                    .ifPresent(data -> removeCacheData(classData));
+        }
+    }
+    
+    /**
+     * update cache data.
+     *
+     * @param data data is plugin mate data, data is not null
+     * @param <T>  data type, support is [{@link PluginData},{@link SelectorData},{@link RuleData}]
+     */
+    private <T> void updateCacheData(@NonNull final T data) {
+        if (data instanceof PluginData) {
+            PluginData pluginData = (PluginData) data;
+            final PluginData oldPluginData = BaseDataCache.getInstance().obtainPluginData(pluginData.getName());
+            BaseDataCache.getInstance().cachePluginData(pluginData);
+            Optional.ofNullable(handlerMap.get(pluginData.getName()))
+                    .ifPresent(handler -> handler.handlerPlugin(pluginData));
+
+            // update enabled plugins
+            PluginHandlerEventEnum state = Boolean.TRUE.equals(pluginData.getEnabled())
+                    ? PluginHandlerEventEnum.ENABLED : PluginHandlerEventEnum.DISABLED;
+            eventPublisher.publishEvent(new PluginHandlerEvent(state, pluginData));
+
+            // sorted plugin
+            sortPluginIfOrderChange(oldPluginData, pluginData);
+        } else if (data instanceof SelectorData) {
+            SelectorData selectorData = (SelectorData) data;
+            BaseDataCache.getInstance().cacheSelectData(selectorData);
+            MatchDataCache.getInstance().removeSelectorData(selectorData.getPluginName());
+            Optional.ofNullable(handlerMap.get(selectorData.getPluginName()))
+                    .ifPresent(handler -> handler.handlerSelector(selectorData));
+            
+        } else if (data instanceof RuleData) {
+            RuleData ruleData = (RuleData) data;
+            BaseDataCache.getInstance().cacheRuleData(ruleData);
+            Optional.ofNullable(handlerMap.get(ruleData.getPluginName()))
+                    .ifPresent(handler -> handler.handlerRule(ruleData));
+            
+        }
+    }
+
+    /**
+     * judge need update plugin order.
+     *
+     * @param oldPluginData old pluginData
+     * @param pluginData    current pluginData
+     */
+    private void sortPluginIfOrderChange(final PluginData oldPluginData, final PluginData pluginData) {
+        if (Objects.isNull(eventPublisher) || Objects.isNull(pluginData.getSort())) {
+            return;
+        }
+        if (Objects.isNull(oldPluginData) || Objects.isNull(oldPluginData.getSort())
+                || (!Objects.equals(oldPluginData.getSort(), pluginData.getSort()))) {
+            eventPublisher.publishEvent(new PluginHandlerEvent(PluginHandlerEventEnum.SORTED, pluginData));
+        }
+    }
+
+    /**
+     * remove cache data.
+     *
+     * @param data data is plugin mate data, data is not null
+     * @param <T>  data type, support is [{@link PluginData},{@link SelectorData},{@link RuleData}]
+     */
+    private <T> void removeCacheData(@NonNull final T data) {
+        if (data instanceof PluginData) {
+            PluginData pluginData = (PluginData) data;
+            BaseDataCache.getInstance().removePluginData(pluginData);
+            Optional.ofNullable(handlerMap.get(pluginData.getName()))
+                    .ifPresent(handler -> handler.removePlugin(pluginData));
+            eventPublisher.publishEvent(new PluginHandlerEvent(PluginHandlerEventEnum.DELETE, pluginData));
+        } else if (data instanceof SelectorData) {
+            SelectorData selectorData = (SelectorData) data;
+            BaseDataCache.getInstance().removeSelectData(selectorData);
+            MatchDataCache.getInstance().removeSelectorData(selectorData.getPluginName());
+            Optional.ofNullable(handlerMap.get(selectorData.getPluginName()))
+                    .ifPresent(handler -> handler.removeSelector(selectorData));
+            
+        } else if (data instanceof RuleData) {
+            RuleData ruleData = (RuleData) data;
+            BaseDataCache.getInstance().removeRuleData(ruleData);
+            Optional.ofNullable(handlerMap.get(ruleData.getPluginName()))
+                    .ifPresent(handler -> handler.removeRule(ruleData));
+            
+        }
     }
 }

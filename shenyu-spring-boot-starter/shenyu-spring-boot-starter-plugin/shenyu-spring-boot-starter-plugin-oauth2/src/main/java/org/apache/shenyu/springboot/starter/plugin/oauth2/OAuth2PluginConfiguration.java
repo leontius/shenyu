@@ -23,6 +23,7 @@ import org.apache.shenyu.plugin.oauth2.filter.OAuth2PreFilter;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.security.reactive.PathRequest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
@@ -56,6 +57,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Configuration
 @ConditionalOnClass(OAuth2Plugin.class)
 @EnableWebFluxSecurity
+@ConditionalOnProperty(value = {"shenyu.plugins.oauth2.enabled"}, havingValue = "true", matchIfMissing = true)
 public class OAuth2PluginConfiguration {
 
     private static final String DEFAULT_CLIENT_REGISTRATION_BEAN = "org.apache.shenyu.springboot.starter.plugin.oauth2.defaultReactiveClientRegistrationRepository";
@@ -69,7 +71,8 @@ public class OAuth2PluginConfiguration {
     private static final OrServerWebExchangeMatcher OR_MATCHER = new OrServerWebExchangeMatcher(MATCHERS);
 
     /**
-     * oauth2 plugin shenyu plugin.
+     * oauth2 plugin.
+     *
      * @param authorizedClientServiceProvider the ReactiveOAuth2AuthorizedClientServiceProvider
      * @return the shenyu plugin
      */
@@ -141,7 +144,7 @@ public class OAuth2PluginConfiguration {
 
     /**
      * Build default clientRegistration.
-     * if this bean load, the oauth2 plugin don't take effect
+     * if this bean load, the oauth2 plugin don't take effect.
      *
      * @return The clientRegistration instance.
      */

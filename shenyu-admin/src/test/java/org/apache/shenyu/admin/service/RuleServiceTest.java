@@ -17,6 +17,8 @@
 
 package org.apache.shenyu.admin.service;
 
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.shenyu.admin.mapper.DataPermissionMapper;
 import org.apache.shenyu.admin.mapper.PluginMapper;
@@ -38,17 +40,19 @@ import org.apache.shenyu.admin.model.query.RuleConditionQuery;
 import org.apache.shenyu.admin.model.query.RuleQuery;
 import org.apache.shenyu.admin.model.vo.RuleVO;
 import org.apache.shenyu.admin.service.impl.RuleServiceImpl;
+import org.apache.shenyu.admin.service.publish.RuleEventPublisher;
 import org.apache.shenyu.admin.utils.JwtUtils;
 import org.apache.shenyu.common.dto.RuleData;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.mockito.stubbing.Answer;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
@@ -56,11 +60,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mockStatic;
@@ -69,7 +74,8 @@ import static org.mockito.Mockito.when;
 /**
  * Test cases for RuleService.
  */
-@RunWith(MockitoJUnitRunner.Silent.class)
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public final class RuleServiceTest {
 
     @InjectMocks
@@ -86,20 +92,17 @@ public final class RuleServiceTest {
 
     @Mock
     private PluginMapper pluginMapper;
-
-    @Mock
-    private ApplicationEventPublisher eventPublisher;
-
+    
     @Mock
     private DataPermissionMapper dataPermissionMapper;
-
+    
     @Mock
-    private org.apache.shiro.mgt.SecurityManager securityManager;
+    private RuleEventPublisher ruleEventPublisher;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         when(dataPermissionMapper.listByUserId("1")).thenReturn(Collections.singletonList(DataPermissionDO.buildPermissionDO(new DataPermissionDTO())));
-        ruleService = new RuleServiceImpl(ruleMapper, ruleConditionMapper, selectorMapper, pluginMapper, dataPermissionMapper, eventPublisher);
+        ruleService = new RuleServiceImpl(ruleMapper, ruleConditionMapper, selectorMapper, pluginMapper, ruleEventPublisher);
     }
 
     @Test
@@ -122,6 +125,7 @@ public final class RuleServiceTest {
         RuleDO ruleDO = buildRuleDO("123");
         given(this.ruleMapper.selectById("123")).willReturn(ruleDO);
         final List<String> ids = Collections.singletonList(ruleDO.getId());
+        given(this.ruleMapper.deleteByIds(ids)).willReturn(ids.size());
         assertEquals(this.ruleService.delete(ids), ids.size());
     }
 
@@ -158,13 +162,13 @@ public final class RuleServiceTest {
     @Test
     public void testListAll() {
         publishEvent();
-        checkListAll();
+        checkListAll(null);
     }
 
     @Test
     public void testListAllWithSelectorNull() {
         mockFindSelectorIsNull();
-        checkListAll();
+        checkListAll(0);
     }
 
     private void mockFindSelectorIsNull() {
@@ -175,7 +179,7 @@ public final class RuleServiceTest {
     @Test
     public void testListAllWithPluginNull() {
         mockFindPluginIsNull();
-        checkListAll();
+        checkListAll(0);
     }
 
     private void mockFindPluginIsNull() {
@@ -183,7 +187,7 @@ public final class RuleServiceTest {
         given(this.pluginMapper.selectById("789")).willReturn(null);
     }
 
-    private void checkListAll() {
+    private void checkListAll(final Integer expected) {
         RuleConditionQuery ruleConditionQuery = buildRuleConditionQuery();
         RuleConditionDO ruleCondition = buildRuleConditionDO();
         given(this.ruleConditionMapper.selectByQuery(ruleConditionQuery)).willReturn(Collections.singletonList(ruleCondition));
@@ -192,7 +196,7 @@ public final class RuleServiceTest {
         given(this.ruleMapper.selectAll()).willReturn(ruleDOList);
         List<RuleData> dataList = this.ruleService.listAll();
         assertNotNull(dataList);
-        assertEquals(ruleDOList.size(), dataList.size());
+        assertEquals(Optional.ofNullable(expected).orElse(ruleDOList.size()), dataList.size());
     }
 
     @Test
@@ -209,24 +213,41 @@ public final class RuleServiceTest {
         assertEquals(ruleDOList.size(), dataList.size());
     }
 
+    @Test
+    public void testFindBySelectorIdList() {
+        publishEvent();
+        RuleConditionQuery ruleConditionQuery = buildRuleConditionQuery();
+        RuleConditionDO ruleCondition = buildRuleConditionDO();
+        given(this.ruleConditionMapper.selectByQuery(ruleConditionQuery)).willReturn(Collections.singletonList(ruleCondition));
+        RuleDO ruleDO = buildRuleDO("123");
+        List<RuleDO> ruleDOList = Collections.singletonList(ruleDO);
+        given(this.ruleMapper.findBySelectorIds(Collections.singletonList("456"))).willReturn(ruleDOList);
+        List<RuleData> dataList = this.ruleService.findBySelectorIdList(Collections.singletonList("456"));
+        assertNotNull(dataList);
+        assertEquals(ruleDOList.size(), dataList.size());
+    }
+
     private void publishEvent() {
         PluginDO pluginDO = buildPluginDO();
         SelectorDO selectorDO = buildSelectorDO();
         given(this.selectorMapper.selectById("456")).willReturn(selectorDO);
         given(this.pluginMapper.selectById("789")).willReturn(pluginDO);
+        given(this.selectorMapper.selectByIdSet(Sets.newHashSet("456"))).willReturn(Collections.singletonList(selectorDO));
+        given(this.pluginMapper.selectByIds(Lists.newArrayList("789"))).willReturn(Collections.singletonList(pluginDO));
+        given(this.ruleConditionMapper.selectByRuleIdSet(Sets.newHashSet("123"))).willReturn(Collections.singletonList(buildRuleConditionDO()));
     }
 
     private void testRegisterCreate() {
         RuleDTO ruleDTO = buildRuleDTO("");
         RuleDO ruleDO = RuleDO.buildRuleDO(ruleDTO);
-        String ruleId = this.ruleService.register(ruleDTO, ruleDTO.getName(), false);
+        String ruleId = this.ruleService.registerDefault(ruleDTO);
         assertNotNull(ruleId);
         assertEquals(ruleId.length(), ruleDO.getId().length());
     }
 
     private void testRegisterUpdate() {
         RuleDTO ruleDTO = buildRuleDTO("123");
-        String ruleId = this.ruleService.register(ruleDTO, ruleDTO.getName(), false);
+        String ruleId = this.ruleService.registerDefault(ruleDTO);
         assertNotNull(ruleId);
         assertEquals(ruleId, ruleDTO.getId());
     }
@@ -243,6 +264,7 @@ public final class RuleServiceTest {
 
     private void testUpdate() {
         RuleDTO ruleDTO = buildRuleDTO("123");
+        given(this.ruleMapper.selectById("123")).willReturn(RuleDO.builder().id("123").build());
         given(this.ruleMapper.updateSelective(any())).willReturn(1);
         assertThat(this.ruleService.createOrUpdate(ruleDTO), greaterThan(0));
     }

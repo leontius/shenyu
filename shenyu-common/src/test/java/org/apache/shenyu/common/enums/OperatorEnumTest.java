@@ -17,14 +17,15 @@
 
 package org.apache.shenyu.common.enums;
 
-import org.apache.shenyu.common.exception.ShenyuException;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.List;
 
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 
 /**
  * Test Cases for OperatorEnum.
@@ -41,6 +42,12 @@ public final class OperatorEnumTest {
         assertTrue(enums.contains(OperatorEnum.EQ));
         assertTrue(enums.contains(OperatorEnum.REGEX));
         assertTrue(enums.contains(OperatorEnum.CONTAINS));
+        assertTrue(enums.contains(OperatorEnum.PATH_PATTERN));
+        assertTrue(enums.contains(OperatorEnum.TIME_BEFORE));
+        assertTrue(enums.contains(OperatorEnum.TIME_AFTER));
+        assertTrue(enums.contains(OperatorEnum.STARTS_WITH));
+        assertTrue(enums.contains(OperatorEnum.ENDS_WITH));
+        assertTrue(enums.contains(OperatorEnum.EXCLUDE));
         assertFalse(enums.contains(OperatorEnum.GT));
         assertFalse(enums.contains(OperatorEnum.LT));
     }
@@ -56,27 +63,9 @@ public final class OperatorEnumTest {
         assertEquals(OperatorEnum.CONTAINS, OperatorEnum.getOperatorEnumByAlias("contains"));
     }
 
-    /**
-     * test getOperatorEnumByAlias method with GT exception.
-     */
-    @Test(expected = ShenyuException.class)
-    public void testAcquireByNameInvalidWithGTException() {
-        OperatorEnum.getOperatorEnumByAlias(">");
-    }
-
-    /**
-     * test getOperatorEnumByAlias method with LT exception.
-     */
-    @Test(expected = ShenyuException.class)
-    public void testAcquireByNameInvalidWithLTException() {
-        OperatorEnum.getOperatorEnumByAlias("<");
-    }
-
-    /**
-     * test getOperatorEnumByAlias method with misspelling exception.
-     */
-    @Test(expected = ShenyuException.class)
-    public void testAcquireByNameInvalidWithMisspellingException() {
-        OperatorEnum.getOperatorEnumByAlias("nike");
+    @Test
+    public void testGetSupport() {
+        Arrays.stream(OperatorEnum.values())
+                .forEach(operatorEnum -> assertEquals(operatorEnum.getSupport(), OperatorEnum.valueOf(operatorEnum.name()).getSupport()));
     }
 }

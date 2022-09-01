@@ -1,11 +1,10 @@
 /*
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,20 +18,28 @@
 package org.apache.shenyu.admin.config;
 
 import org.apache.shenyu.admin.config.properties.LdapProperties;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.ldap.core.LdapTemplate;
 import org.springframework.ldap.core.support.LdapContextSource;
 
 import static org.hamcrest.CoreMatchers.is;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * The TestCase for LdapConfiguration.
+ * Test cases for {@link LdapConfiguration}.
  */
+@ExtendWith(MockitoExtension.class)
 public final class LdapConfigurationTest {
+
+    @InjectMocks
+    private LdapConfiguration ldapConfiguration;
 
     @Test
     public void testContextSource() {
@@ -45,12 +52,18 @@ public final class LdapConfigurationTest {
         when(ldapProp.getPassword()).thenReturn(pass);
         when(ldapProp.getConnectTimeout()).thenReturn(5000);
         when(ldapProp.getReadTimeout()).thenReturn(10000);
-        LdapConfiguration ldapConfiguration = new LdapConfiguration();
         LdapContextSource ldapContextSource = ldapConfiguration.contextSource(ldapProp);
         assertNotNull(ldapContextSource);
         assertThat(ldapContextSource.getUrls().length, is(1));
         assertEquals(ldapContextSource.getUrls()[0], ldapUrl);
         assertEquals(ldapContextSource.getUserDn(), user);
         assertEquals(ldapContextSource.getPassword(), pass);
+    }
+
+    @Test
+    public void testLdapTemplate() {
+        LdapContextSource ldapContextSource = new LdapContextSource();
+        LdapTemplate ldapTemplate = ldapConfiguration.ldapTemplate(ldapContextSource);
+        assertNotNull(ldapTemplate);
     }
 }

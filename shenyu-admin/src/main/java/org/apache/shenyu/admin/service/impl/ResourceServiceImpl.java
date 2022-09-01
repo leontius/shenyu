@@ -18,75 +18,87 @@
 package org.apache.shenyu.admin.service.impl;
 
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.shenyu.admin.aspect.annotation.Pageable;
-import org.apache.shenyu.admin.mapper.PermissionMapper;
 import org.apache.shenyu.admin.mapper.ResourceMapper;
-import org.apache.shenyu.admin.model.dto.PermissionDTO;
+import org.apache.shenyu.admin.model.dto.CreateResourceDTO;
 import org.apache.shenyu.admin.model.dto.ResourceDTO;
-import org.apache.shenyu.admin.model.entity.PermissionDO;
+import org.apache.shenyu.admin.model.entity.PluginDO;
 import org.apache.shenyu.admin.model.entity.ResourceDO;
+import org.apache.shenyu.admin.model.event.plugin.BatchPluginDeletedEvent;
+import org.apache.shenyu.admin.model.event.plugin.PluginCreatedEvent;
 import org.apache.shenyu.admin.model.page.CommonPager;
 import org.apache.shenyu.admin.model.page.PageResultUtils;
 import org.apache.shenyu.admin.model.query.ResourceQuery;
 import org.apache.shenyu.admin.model.vo.PermissionMenuVO.MenuInfo;
 import org.apache.shenyu.admin.model.vo.ResourceVO;
 import org.apache.shenyu.admin.service.ResourceService;
-import org.apache.shenyu.common.constant.AdminConstants;
+import org.apache.shenyu.admin.service.publish.ResourceEventPublisher;
+import org.apache.shenyu.admin.utils.ListUtil;
+import org.apache.shenyu.admin.utils.ResourceUtil;
 import org.apache.shenyu.common.enums.AdminResourceEnum;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.ObjectUtils;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.stream.Collectors;
 
 /**
  * Implementation of the {@link org.apache.shenyu.admin.service.ResourceService}.
  */
 @Service
 public class ResourceServiceImpl implements ResourceService {
-
+    
     private final ResourceMapper resourceMapper;
-
-    private final PermissionMapper permissionMapper;
-
-    public ResourceServiceImpl(final ResourceMapper resourceMapper, final PermissionMapper permissionMapper) {
+    
+    private final ResourceEventPublisher publisher;
+    
+    public ResourceServiceImpl(final ResourceMapper resourceMapper,
+                               final ResourceEventPublisher publisher) {
         this.resourceMapper = resourceMapper;
-        this.permissionMapper = permissionMapper;
+        this.publisher = publisher;
     }
-
+    
     /**
-     * create resource and return data.
+     * create Resources.
      *
-     * @param resourceDO {@linkplain ResourceDO}
+     * @param resourceDOList list of {@linkplain ResourceDO}
+     * @return rows int
      */
     @Override
-    public void createResource(final ResourceDO resourceDO) {
-        insertResource(resourceDO);
+    public int createResourceBatch(final List<ResourceDO> resourceDOList) {
+        return this.insertResourceBatch(resourceDOList);
     }
 
     /**
-     *  create or update resource.
+     * create Resource.
+     *
+     * @param createResourceDTO list of {@linkplain CreateResourceDTO}
+     * @return rows int
+     */
+    @Override
+    public int create(final CreateResourceDTO createResourceDTO) {
+        return this.createOne(ResourceDO.buildResourceDO(createResourceDTO));
+    }
+
+    /**
+     * update resource.
      *
      * @param resourceDTO {@linkplain ResourceDTO}
      * @return rows int
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
-    public int createOrUpdate(final ResourceDTO resourceDTO) {
-        ResourceDO resourceDO = ResourceDO.buildResourceDO(resourceDTO);
-        if (StringUtils.isEmpty(resourceDTO.getId())) {
-            return insertResource(resourceDO);
-        } else {
-            return resourceMapper.updateSelective(resourceDO);
+    public int update(final ResourceDTO resourceDTO) {
+        final ResourceDO before = resourceMapper.selectById(resourceDTO.getId());
+        final ResourceDO resource = ResourceDO.buildResourceDO(resourceDTO);
+        final int updateCount = resourceMapper.updateSelective(resource);
+        if (updateCount > 0) {
+            publisher.onUpdated(resource, before);
         }
+        return updateCount;
     }
-
+    
     /**
      * delete resource info.
      *
@@ -96,14 +108,15 @@ public class ResourceServiceImpl implements ResourceService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int delete(final List<String> ids) {
-        Map<String, String> deleteResourceMap = new HashMap<>();
-        List<ResourceVO> resourceVOList = resourceMapper.selectAll().stream().map(ResourceVO::buildResourceVO).collect(Collectors.toList());
-        getDeleteResourceIds(deleteResourceMap, ids, resourceVOList);
-        List<String> deleteResourceIds = new ArrayList<>(deleteResourceMap.keySet());
-        permissionMapper.deleteByResourceId(deleteResourceIds);
-        return resourceMapper.delete(deleteResourceIds);
+        List<ResourceDO> deleteResource = ResourceUtil.getDeleteResourceIds(ids, resourceMapper.selectAll());
+        final List<String> deleteIds = ListUtil.map(deleteResource, ResourceDO::getId);
+        int deleteCount = resourceMapper.delete(deleteIds);
+        if (deleteCount > 0) {
+            publisher.onDeleted(deleteResource);
+        }
+        return deleteCount;
     }
-
+    
     /**
      * find resource info by id.
      *
@@ -114,7 +127,7 @@ public class ResourceServiceImpl implements ResourceService {
     public ResourceVO findById(final String id) {
         return ResourceVO.buildResourceVO(resourceMapper.selectById(id));
     }
-
+    
     /**
      * find resource info by title.
      *
@@ -125,7 +138,18 @@ public class ResourceServiceImpl implements ResourceService {
     public ResourceVO findByTitle(final String title) {
         return ResourceVO.buildResourceVO(resourceMapper.selectByTitle(title));
     }
-
+    
+    /**
+     * find by title.
+     *
+     * @param titles resource titles
+     * @return {@linkplain ResourceVO}
+     */
+    @Override
+    public List<ResourceVO> listByTitles(final List<String> titles) {
+        return ListUtil.map(resourceMapper.selectByTitles(titles), ResourceVO::buildResourceVO);
+    }
+    
     /**
      * find page of role by query.
      *
@@ -135,13 +159,12 @@ public class ResourceServiceImpl implements ResourceService {
     @Override
     @Pageable
     public CommonPager<ResourceVO> listByPage(final ResourceQuery resourceQuery) {
-        return PageResultUtils.result(resourceQuery.getPageParameter(),
-            () -> resourceMapper.selectByQuery(resourceQuery)
-                            .stream()
-                            .map(ResourceVO::buildResourceVO)
-                            .collect(Collectors.toList()));
+        return PageResultUtils.result(resourceQuery.getPageParameter(), () -> resourceMapper.selectByQuery(resourceQuery)
+                .stream()
+                .map(ResourceVO::buildResourceVO)
+                .collect(Collectors.toList()));
     }
-
+    
     /**
      * get menu info.
      *
@@ -149,15 +172,10 @@ public class ResourceServiceImpl implements ResourceService {
      */
     @Override
     public List<MenuInfo> getMenuTree() {
-        List<ResourceVO> resourceVOList = resourceMapper.selectAll().stream().map(ResourceVO::buildResourceVO).collect(Collectors.toList());
-        if (CollectionUtils.isNotEmpty(resourceVOList)) {
-            List<MenuInfo> menuInfoList = new ArrayList<>();
-            getMenuInfo(menuInfoList, resourceVOList, null);
-            return menuInfoList;
-        }
-        return null;
+        List<ResourceVO> resourceVOList = ListUtil.map(resourceMapper.selectAll(), ResourceVO::buildResourceVO);
+        return CollectionUtils.isEmpty(resourceVOList) ? null : ResourceUtil.buildMenu(resourceVOList);
     }
-
+    
     /**
      * get button by parent id.
      *
@@ -166,75 +184,63 @@ public class ResourceServiceImpl implements ResourceService {
      */
     @Override
     public List<ResourceVO> findByParentId(final String id) {
-        return resourceMapper.selectByParentId(id).stream()
+        return resourceMapper.selectByParentId(id)
+                .stream()
                 .filter(item -> item.getResourceType().equals(AdminResourceEnum.THREE_MENU.getCode()))
-                .map(ResourceVO::buildResourceVO).collect(Collectors.toList());
+                .map(ResourceVO::buildResourceVO)
+                .collect(Collectors.toList());
     }
-
+    
     /**
-     * get Menu Info.
+     * The associated Handle needs to be created synchronously.
+     * add plugin and add plugin resource.
      *
-     * @param menuInfoList {@linkplain List} menu info.
-     * @param metaList {@linkplain List} resource list
-     * @param menuInfo {@linkplain MenuInfo}
+     * @param event event
      */
-    @Override
-    public void getMenuInfo(final List<MenuInfo> menuInfoList, final List<ResourceVO> metaList, final MenuInfo menuInfo) {
-        for (ResourceVO resourceVO : metaList) {
-            String parentId = resourceVO.getParentId();
-            MenuInfo tempMenuInfo = MenuInfo.buildMenuInfo(resourceVO);
-            if (ObjectUtils.isEmpty(tempMenuInfo)) {
-                continue;
-            }
-            if (ObjectUtils.isEmpty(menuInfo) && reactor.util.StringUtils.isEmpty(parentId)) {
-                menuInfoList.add(tempMenuInfo);
-                if (Objects.equals(resourceVO.getIsLeaf(), Boolean.FALSE)) {
-                    getMenuInfo(menuInfoList, metaList, tempMenuInfo);
-                }
-            } else if (!ObjectUtils.isEmpty(menuInfo) && StringUtils.isNotEmpty(parentId) && parentId.equals(menuInfo.getId())) {
-                menuInfo.getChildren().add(tempMenuInfo);
-                if (Objects.equals(resourceVO.getIsLeaf(), Boolean.FALSE)) {
-                    getMenuInfo(menuInfoList, metaList, tempMenuInfo);
-                }
-            }
+    @EventListener(value = PluginCreatedEvent.class)
+    public void onPluginCreated(final PluginCreatedEvent event) {
+        ResourceDO resourceDO = ResourceUtil.buildPluginResource(event.getPlugin().getName());
+        this.createOne(resourceDO);
+        insertResourceBatch(ResourceUtil.buildPluginDataPermissionResource(resourceDO.getId(), event.getPlugin().getName()));
+    }
+    
+    /**
+     * The associated Handle needs to be deleted synchronously.
+     *
+     * @param event event
+     */
+    @EventListener(value = BatchPluginDeletedEvent.class)
+    public void onPluginDeleted(final BatchPluginDeletedEvent event) {
+        // 5. delete resource & permission.
+        final List<ResourceVO> resources = listByTitles(ListUtil.map((List<?>) event.getSource(), s -> ((PluginDO) s).getName()));
+        if (CollectionUtils.isNotEmpty(resources)) {
+            delete(ListUtil.map(resources, ResourceVO::getId));
         }
     }
-
-    /**
-     * get delete resource ids.
-     *
-     * @param resourceIds resource ids
-     * @param metaList all resource object
-     */
-    private void getDeleteResourceIds(final Map<String, String> deleteResourceIds, final List<String> resourceIds,
-                                      final List<ResourceVO> metaList) {
-        List<String> matchResourceIds = new ArrayList<>();
-        resourceIds.forEach(item -> {
-            matchResourceIds.clear();
-            metaList.forEach(resource -> {
-                if (resource.getParentId().equals(item)) {
-                    matchResourceIds.add(resource.getId());
-                }
-                if (resource.getId().equals(item) || resource.getParentId().equals(item)) {
-                    deleteResourceIds.put(resource.getId(), resource.getTitle());
-                }
-            });
-            if (CollectionUtils.isNotEmpty(matchResourceIds)) {
-                getDeleteResourceIds(deleteResourceIds, matchResourceIds, metaList);
-            }
-        });
+    
+    private int createOne(final ResourceDO resource) {
+        final int insertCount = resourceMapper.insertSelective(resource);
+        if (insertCount > 0) {
+            publisher.onCreated(resource);
+        }
+        return insertCount;
     }
+    
 
     /**
-     * insert Resource.
+     * insert Resources.
      *
-     * @param resourceDO {@linkplain ResourceDO}
+     * @param resourceDOList list of {@linkplain ResourceDO}
      * @return row int
      */
-    private int insertResource(final ResourceDO resourceDO) {
-        permissionMapper.insertSelective(PermissionDO.buildPermissionDO(PermissionDTO.builder()
-                .objectId(AdminConstants.ROLE_SUPER_ID)
-                .resourceId(resourceDO.getId()).build()));
-        return resourceMapper.insertSelective(resourceDO);
+    private int insertResourceBatch(final List<ResourceDO> resourceDOList) {
+        if (CollectionUtils.isEmpty(resourceDOList)) {
+            return 0;
+        }
+        final int insertCount = resourceMapper.insertBatch(resourceDOList);
+        if (insertCount > 0) {
+            publisher.onCreated(resourceDOList);
+        }
+        return insertCount;
     }
 }

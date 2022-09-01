@@ -14,161 +14,156 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
+    
 package org.apache.shenyu.admin.service.register;
 
-import org.apache.shenyu.admin.mapper.MetaDataMapper;
-import org.apache.shenyu.admin.model.dto.RuleDTO;
-import org.apache.shenyu.admin.model.dto.SelectorDTO;
 import org.apache.shenyu.admin.model.entity.MetaDataDO;
-import org.apache.shenyu.admin.service.PluginService;
-import org.apache.shenyu.admin.service.RuleService;
-import org.apache.shenyu.admin.service.SelectorService;
+import org.apache.shenyu.admin.model.entity.SelectorDO;
+import org.apache.shenyu.admin.service.converter.SpringCloudSelectorHandleConverter;
 import org.apache.shenyu.admin.service.impl.MetaDataServiceImpl;
-import org.apache.shenyu.admin.service.impl.UpstreamCheckService;
-import org.apache.shenyu.admin.utils.ShenyuResultMessage;
-import org.apache.shenyu.common.enums.OperatorEnum;
-import org.apache.shenyu.common.enums.PluginEnum;
+import org.apache.shenyu.admin.utils.CommonUpstreamUtils;
+import org.apache.shenyu.common.dto.convert.rule.impl.SpringCloudRuleHandle;
+import org.apache.shenyu.common.dto.convert.selector.SpringCloudSelectorHandle;
 import org.apache.shenyu.common.enums.RpcTypeEnum;
-import org.apache.shenyu.common.utils.UUIDUtils;
+import org.apache.shenyu.common.utils.GsonUtils;
 import org.apache.shenyu.register.common.dto.MetaDataRegisterDTO;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.apache.shenyu.register.common.dto.URIRegisterDTO;
+import org.apache.shenyu.register.common.enums.EventType;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.springframework.context.ApplicationEventPublisher;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import org.springframework.test.util.ReflectionTestUtils;
 
-import java.util.UUID;
+import java.util.ArrayList;
+import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
-
+import static org.mockito.Mockito.when;
+    
 /**
- * ShenyuClientRegisterSpringCloudServiceImplTest.
+ * Test cases for {@link ShenyuClientRegisterSpringCloudServiceImpl}.
  */
-@PrepareForTest(MetaDataServiceImpl.class)
-@RunWith(MockitoJUnitRunner.Silent.class)
-public class ShenyuClientRegisterSpringCloudServiceImplTest { 
-
-    @Mock
-    private MetaDataMapper metaDataMapper;
-
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+public final class ShenyuClientRegisterSpringCloudServiceImplTest {
+    
+    public static final String HOST = "localhost";
+    
     @InjectMocks
+    private ShenyuClientRegisterSpringCloudServiceImpl shenyuClientRegisterSpringCloudService;
+    
+    @Mock
     private MetaDataServiceImpl metaDataService;
 
-    @Mock
-    private SelectorService selectorService;
-
-    @Mock
-    private PluginService pluginService;
-
-    @Mock
-    private RuleService ruleService;
-
-    @Mock
-    private ApplicationEventPublisher eventPublisher;
-    
-    @Mock
-    private UpstreamCheckService upstreamCheckService;
-    
-    private AbstractShenyuClientRegisterServiceImpl shenyuClientRegisterSpringCloudService;
-    
-    @Before
+    @BeforeEach
     public void setUp() {
-        shenyuClientRegisterSpringCloudService = new ShenyuClientRegisterSpringCloudServiceImpl(metaDataService, eventPublisher, selectorService, ruleService, pluginService, upstreamCheckService);
+        SpringCloudSelectorHandleConverter springCloudSelectorHandleConverter = new SpringCloudSelectorHandleConverter();
+        ReflectionTestUtils.setField(shenyuClientRegisterSpringCloudService, "springCloudSelectorHandleConverter", springCloudSelectorHandleConverter);
     }
 
     @Test
-    public void testSaveOrUpdateMetaData() {
-        MetaDataDO metaDataDO = buildMetaDataDO();
-        MetaDataRegisterDTO metaDataRegisterDTO = buildScMetaDataRegisterDTO();
-        shenyuClientRegisterSpringCloudService.saveOrUpdateMetaData(metaDataDO, metaDataRegisterDTO);
-        verify(eventPublisher, times(1)).publishEvent(any());
+    public void testRpcType() {
+        assertEquals(RpcTypeEnum.SPRING_CLOUD.getName(), shenyuClientRegisterSpringCloudService.rpcType());
     }
-
+    
     @Test
-    public void testHandlerSelector() {
-        String selectorId = UUID.randomUUID().toString();
-        MetaDataRegisterDTO metaDataRegisterDTO = buildScMetaDataRegisterDTO();
-        given(selectorService.register(any())).willReturn(selectorId);
-        Assert.assertEquals(shenyuClientRegisterSpringCloudService.handlerSelector(metaDataRegisterDTO), selectorId);
+    public void testSelectorHandler() {
+        MetaDataRegisterDTO metaDataRegisterDTO = MetaDataRegisterDTO.builder().appName("testSelectorHandler").build();
+        assertEquals("{\"serviceId\":\"testSelectorHandler\",\"gray\":false}", 
+                shenyuClientRegisterSpringCloudService.selectorHandler(metaDataRegisterDTO));
     }
-
+    
     @Test
-    public void testHandlerRule() {
-        String selectorId = UUID.randomUUID().toString();
-        MetaDataDO metaDataDO = buildMetaDataDO();
-        MetaDataRegisterDTO metaDataRegisterDTO = buildScMetaDataRegisterDTO();
-        given(ruleService.register(any(), anyString(), anyBoolean())).willReturn(UUIDUtils.getInstance().generateShortUuid());
-        shenyuClientRegisterSpringCloudService.handlerRule(selectorId, metaDataRegisterDTO, metaDataDO);
+    public void testRuleHandler() {
+        assertEquals(new SpringCloudRuleHandle().toJson(), shenyuClientRegisterSpringCloudService.ruleHandler());
     }
-
+    
     @Test
-    public void testRegisterRule() {
-        String selectorId = UUID.randomUUID().toString();
-        final MetaDataRegisterDTO metaDataRegisterDTO = buildScMetaDataRegisterDTO();
-        metaDataRegisterDTO.setPath("path*");
-        RuleDTO result = shenyuClientRegisterSpringCloudService.registerRule(selectorId, metaDataRegisterDTO, PluginEnum.SPRING_CLOUD.getName());
-        Assert.assertNotNull(result);
-        Assert.assertEquals(result.getSelectorId(), selectorId);
-        Assert.assertEquals(result.getName(), metaDataRegisterDTO.getRuleName());
-        Assert.assertNotNull(result.getRuleConditions());
-        Assert.assertEquals(result.getRuleConditions().size(), 1);
-        Assert.assertEquals(result.getRuleConditions().get(0).getOperator(), OperatorEnum.MATCH.getAlias());
-
-        metaDataRegisterDTO.setPath("path");
-        result = shenyuClientRegisterSpringCloudService.registerRule(selectorId, metaDataRegisterDTO, PluginEnum.SPRING_CLOUD.getName());
-        Assert.assertEquals(result.getRuleConditions().get(0).getOperator(), OperatorEnum.EQ.getAlias());
+    public void testRegisterMetadata() {
+        MetaDataDO metaDataDO = MetaDataDO.builder().build();
+        when(metaDataService.findByPath(any())).thenReturn(metaDataDO);
+        MetaDataRegisterDTO metaDataDTO = MetaDataRegisterDTO.builder().path("/contextPath/test").build();
+        shenyuClientRegisterSpringCloudService.registerMetadata(metaDataDTO);
+        verify(metaDataService).findByPath("/contextPath/test");
+        verify(metaDataService).saveOrUpdateMetaData(metaDataDO, metaDataDTO);
     }
-
+    
     @Test
-    public void testRegister() {
-        String selectorId = UUID.randomUUID().toString();
+    public void testBuildHandle() {
+        shenyuClientRegisterSpringCloudService = spy(shenyuClientRegisterSpringCloudService);
+        
+        final String returnStr = "{serviceId:'test1',gray:false,divideUpstreams:["
+                + "{weight:50,warmup:10,protocol:'http://',upstreamHost:'localhost',upstreamUrl:'localhost:8090',status:'true',timestamp:1637909490935},"
+                + "{weight:50,warmup:10,protocol:'http://',upstreamHost:'localhost',upstreamUrl:'localhost:8091',status:'true',timestamp:1637909490935}]}";
+        final String expected = "{\"serviceId\":\"test1\",\"gray\":false,\"divideUpstreams\":["
+                + "{\"weight\":50,\"warmup\":10,\"protocol\":\"http://\",\"upstreamHost\":\"localhost\",\"upstreamUrl\":\"localhost:8090\",\"status\":true,\"timestamp\":1637909490935},"
+                + "{\"weight\":50,\"warmup\":10,\"protocol\":\"http://\",\"upstreamHost\":\"localhost\",\"upstreamUrl\":\"localhost:8091\",\"status\":false,\"timestamp\":1637909490935}]}";
+        final URIRegisterDTO dto1 = URIRegisterDTO.builder().appName("test2").rpcType(RpcTypeEnum.SPRING_CLOUD.getName()).host(HOST).port(8090).build();
+        final URIRegisterDTO dto2 = URIRegisterDTO.builder().appName("test2").rpcType(RpcTypeEnum.SPRING_CLOUD.getName()).host(HOST).port(8091).build();
+        
+        List<URIRegisterDTO> list = new ArrayList<>();
+        list.add(dto1);
+        SelectorDO selectorDO = mock(SelectorDO.class);
+        doReturn(false).when(shenyuClientRegisterSpringCloudService).doSubmit(any(), any());
+        when(selectorDO.getHandle()).thenReturn(returnStr);
+        String actual = shenyuClientRegisterSpringCloudService.buildHandle(list, selectorDO);
+        assertEquals(expected.replaceAll("\\d{13}", "0"), actual.replaceAll("\\d{13}", "0"));
+        SpringCloudSelectorHandle handle = GsonUtils.getInstance().fromJson(actual, SpringCloudSelectorHandle.class);
+        assertEquals(handle.getDivideUpstreams().size(), 2);
+        assertEquals(handle.getDivideUpstreams().stream().filter(r -> list.stream().map(dto -> CommonUpstreamUtils.buildUrl(dto.getHost(), dto.getPort()))
+                .anyMatch(url -> url.equals(r.getUpstreamUrl()))).allMatch(r -> r.isStatus()), true);
+        assertEquals(handle.getDivideUpstreams().stream().filter(r -> list.stream().map(dto -> CommonUpstreamUtils.buildUrl(dto.getHost(), dto.getPort()))
+                .noneMatch(url -> url.equals(r.getUpstreamUrl()))).allMatch(r -> !r.isStatus()), true);
 
-        final MetaDataRegisterDTO metaDataRegisterDTO = buildScMetaDataRegisterDTO();
-        MetaDataDO metaDataDO = buildMetaDataDO();
-        given(metaDataService.findByPath(any())).willReturn(metaDataDO);
-        given(selectorService.register(SelectorDTO.builder().build())).willReturn(selectorId);
-        given(selectorService.handlerSelectorNeedUpstreamCheck(any(), eq(PluginEnum.SPRING_CLOUD.getName()))).willReturn(selectorId);
-        Assert.assertEquals(ShenyuResultMessage.SUCCESS, shenyuClientRegisterSpringCloudService.register(metaDataRegisterDTO));
+        list.clear();
+        list.add(dto1);
+        list.add(dto2);
+        selectorDO = mock(SelectorDO.class);
+        doReturn(false).when(shenyuClientRegisterSpringCloudService).doSubmit(any(), any());
+        when(selectorDO.getHandle()).thenReturn(returnStr);
+        actual = shenyuClientRegisterSpringCloudService.buildHandle(list, selectorDO);
+        handle = GsonUtils.getInstance().fromJson(actual, SpringCloudSelectorHandle.class);
+        assertEquals(handle.getDivideUpstreams().size(), 2);
+        assertEquals(handle.getDivideUpstreams().stream().filter(r -> list.stream().map(dto -> CommonUpstreamUtils.buildUrl(dto.getHost(), dto.getPort()))
+                .anyMatch(url -> url.equals(r.getUpstreamUrl()))).allMatch(r -> r.isStatus()), true);
+        assertEquals(handle.getDivideUpstreams().stream().filter(r -> list.stream().map(dto -> CommonUpstreamUtils.buildUrl(dto.getHost(), dto.getPort()))
+                .noneMatch(url -> url.equals(r.getUpstreamUrl()))).allMatch(r -> !r.isStatus()), true);
+
+        list.clear();
+        list.add(dto1);
+        selectorDO = mock(SelectorDO.class);
+        doReturn(false).when(shenyuClientRegisterSpringCloudService).doSubmit(any(), any());
+        when(selectorDO.getHandle()).thenReturn("{serviceId:'test1',gray:false,divideUpstreams:[]}");
+        actual = shenyuClientRegisterSpringCloudService.buildHandle(list, selectorDO);
+        handle = GsonUtils.getInstance().fromJson(actual, SpringCloudSelectorHandle.class);
+        assertEquals(handle.getDivideUpstreams().size(), 1);
+        assertEquals(handle.getDivideUpstreams().stream().anyMatch(r -> r.isStatus() && r.getUpstreamUrl().equals(CommonUpstreamUtils.buildUrl(dto1.getHost(), dto1.getPort()))), true);
+
+        list.clear();
+        dto1.setEventType(EventType.DELETED);
+        list.add(dto1);
+        selectorDO = mock(SelectorDO.class);
+        doReturn(false).when(shenyuClientRegisterSpringCloudService).doSubmit(any(), any());
+        when(selectorDO.getHandle()).thenReturn("{serviceId:'test1',gray:false,divideUpstreams:[]}");
+        actual = shenyuClientRegisterSpringCloudService.buildHandle(list, selectorDO);
+        handle = GsonUtils.getInstance().fromJson(actual, SpringCloudSelectorHandle.class);
+        assertEquals(handle.getDivideUpstreams().size(), 1);
+        assertEquals(handle.getDivideUpstreams().stream().anyMatch(r -> !r.isStatus() && r.getUpstreamUrl().equals(CommonUpstreamUtils.buildUrl(dto1.getHost(), dto1.getPort()))), true);
+
+        list.clear();
+        doReturn(false).when(shenyuClientRegisterSpringCloudService).doSubmit(any(), any());
+        actual = shenyuClientRegisterSpringCloudService.buildHandle(list, selectorDO);
+        handle = GsonUtils.getInstance().fromJson(actual, SpringCloudSelectorHandle.class);
+        assertEquals(handle.getDivideUpstreams().stream().allMatch(r -> !r.isStatus()), true);
     }
-
-    private MetaDataRegisterDTO buildScMetaDataRegisterDTO() {
-        MetaDataRegisterDTO springMvcRegisterDTO = new MetaDataRegisterDTO();
-        springMvcRegisterDTO.setAppName("appName1");
-        springMvcRegisterDTO.setContextPath("content1");
-        springMvcRegisterDTO.setPath("path1");
-        springMvcRegisterDTO.setPathDesc("pathDesc1");
-        springMvcRegisterDTO.setRpcType(RpcTypeEnum.SPRING_CLOUD.getName());
-        springMvcRegisterDTO.setHost("localhost1");
-        springMvcRegisterDTO.setPort(1234);
-        springMvcRegisterDTO.setRuleName("ruleName1");
-        springMvcRegisterDTO.setEnabled(true);
-        springMvcRegisterDTO.setRegisterMetaData(false);
-        return springMvcRegisterDTO;
-    }
-
-    private MetaDataDO buildMetaDataDO() {
-        return MetaDataDO.builder()
-                .appName("appNameMetaData")
-                .path("pathMetaData")
-                .pathDesc("pathDescMetaData")
-                .rpcType("rpcTypeMetaData")
-                .serviceName("serviceName3")
-                .methodName("methodName3")
-                .parameterTypes("parameterTypesMetaData")
-                .rpcExt("rpcExtMetaData")
-                .enabled(true)
-                .build();
-    }
-
 }

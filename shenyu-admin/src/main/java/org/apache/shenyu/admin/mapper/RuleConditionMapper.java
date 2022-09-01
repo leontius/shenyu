@@ -18,17 +18,19 @@
 package org.apache.shenyu.admin.mapper;
 
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import org.apache.shenyu.admin.model.entity.RuleConditionDO;
 import org.apache.shenyu.admin.model.query.RuleConditionQuery;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * RuleConditionMapper.
  */
 @Mapper
 public interface RuleConditionMapper {
-
+    
     /**
      * select rule condition by id.
      *
@@ -36,7 +38,7 @@ public interface RuleConditionMapper {
      * @return {@linkplain RuleConditionDO}
      */
     RuleConditionDO selectById(String id);
-
+    
     /**
      * select rule condition by query.
      *
@@ -44,7 +46,15 @@ public interface RuleConditionMapper {
      * @return {@linkplain List}
      */
     List<RuleConditionDO> selectByQuery(RuleConditionQuery ruleConditionQuery);
-
+    
+    /**
+     * select list of rule conditions by a set of ruleIds.
+     *
+     * @param ruleIdSet a set of ruleIds
+     * @return a list of {@linkplain RuleConditionDO}
+     */
+    List<RuleConditionDO> selectByRuleIdSet(@Param("ruleIdSet") Set<String> ruleIdSet);
+    
     /**
      * insert rule condition.
      *
@@ -52,7 +62,7 @@ public interface RuleConditionMapper {
      * @return rows
      */
     int insert(RuleConditionDO ruleConditionDO);
-
+    
     /**
      * insert selective rule condition.
      *
@@ -60,7 +70,7 @@ public interface RuleConditionMapper {
      * @return rows
      */
     int insertSelective(RuleConditionDO ruleConditionDO);
-
+    
     /**
      * update rule condition.
      *
@@ -68,7 +78,7 @@ public interface RuleConditionMapper {
      * @return rows
      */
     int update(RuleConditionDO ruleConditionDO);
-
+    
     /**
      * update selective rule condition.
      *
@@ -76,7 +86,7 @@ public interface RuleConditionMapper {
      * @return rows
      */
     int updateSelective(RuleConditionDO ruleConditionDO);
-
+    
     /**
      * delete rule condition.
      *
@@ -84,7 +94,15 @@ public interface RuleConditionMapper {
      * @return rows
      */
     int delete(String id);
-
+    
+    /**
+     * delete rule condition.
+     *
+     * @param ruleIds the rule ids
+     * @return rows
+     */
+    int deleteByRuleIds(List<String> ruleIds);
+    
     /**
      * delete rule condition by query.
      *

@@ -17,8 +17,19 @@
 
 package org.apache.shenyu.admin.service;
 
+import static com.google.common.collect.Lists.newArrayList;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.when;
+
 import org.apache.shenyu.admin.mapper.PermissionMapper;
 import org.apache.shenyu.admin.mapper.ResourceMapper;
+import org.apache.shenyu.admin.model.dto.CreateResourceDTO;
 import org.apache.shenyu.admin.model.dto.ResourceDTO;
 import org.apache.shenyu.admin.model.entity.ResourceDO;
 import org.apache.shenyu.admin.model.page.CommonPager;
@@ -27,65 +38,84 @@ import org.apache.shenyu.admin.model.query.ResourceQuery;
 import org.apache.shenyu.admin.model.vo.PermissionMenuVO;
 import org.apache.shenyu.admin.model.vo.ResourceVO;
 import org.apache.shenyu.admin.service.impl.ResourceServiceImpl;
+import org.apache.shenyu.admin.service.publish.ResourceEventPublisher;
+import org.apache.shenyu.admin.utils.ResourceUtil;
 import org.apache.shenyu.common.constant.ResourceTypeConstants;
 import org.apache.shenyu.common.enums.AdminResourceEnum;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
 
 import java.sql.Timestamp;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static com.google.common.collect.Lists.newArrayList;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertThat;
-import static org.mockito.Mockito.reset;
-import static org.mockito.Mockito.when;
+import org.assertj.core.util.Lists;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 /**
  * test for {@linkplain ResourceService}.
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public class ResourceServiceTest {
-
+    
     @InjectMocks
     private ResourceServiceImpl resourceService;
-
+    
     @Mock
     private ResourceMapper resourceMapper;
-
+    
     @Mock
     private PermissionMapper permissionMapper;
-
+    
+    @Mock
+    private ResourceEventPublisher publisher;
+    
     @Test
-    public void testCreateResource() {
-        final ResourceDO resourceDO = new ResourceDO();
-        resourceDO.setId("mock resource id");
-
+    public void testCreateResourceBatch() {
+        
+        final ResourceDO resourceDO1 = new ResourceDO();
+        resourceDO1.setId("mock resource id1");
+        
+        final ResourceDO resourceDO2 = new ResourceDO();
+        resourceDO2.setId("mock resource id2");
+        
+        final List<ResourceDO> dataList = Lists.list(resourceDO1, resourceDO2);
+        
         reset(resourceMapper);
+        reset(publisher);
         reset(permissionMapper);
-        when(resourceMapper.insertSelective(resourceDO)).thenReturn(1);
-
-        resourceService.createResource(resourceDO);
+        when(resourceMapper.insertBatch(dataList)).thenReturn(dataList.size());
+        
+        assertEquals(resourceService.createResourceBatch(dataList), dataList.size());
     }
-
+    
     @Test
-    public void testCreateOrUpdate() {
+    public void testUpdate() {
         // test update
         ResourceDTO forUpdateResource = new ResourceDTO();
         forUpdateResource.setId("mock id");
         reset(resourceMapper);
+        reset(publisher);
         when(resourceMapper.updateSelective(ResourceDO.buildResourceDO(forUpdateResource))).thenReturn(1);
-        assertThat(resourceService.createOrUpdate(forUpdateResource), equalTo(1));
+        assertThat(resourceService.update(forUpdateResource), equalTo(1));
     }
 
+    @Test
+    public void testCreate() {
+        // test create
+        final CreateResourceDTO createResourceDTO = new CreateResourceDTO();
+        reset(resourceMapper);
+        reset(publisher);
+        when(resourceMapper.insertSelective(any())).thenReturn(1);
+        assertThat(resourceService.create(createResourceDTO), equalTo(1));
+    }
+    
     @Test
     public void testDelete() {
         ResourceDO resourceDO = new ResourceDO();
@@ -93,22 +123,23 @@ public class ResourceServiceTest {
         resourceDO.setParentId("");
         resourceDO.setDateCreated(new Timestamp(System.currentTimeMillis()));
         resourceDO.setDateUpdated(new Timestamp(System.currentTimeMillis()));
-
+        
         ResourceDO childResourceDO = new ResourceDO();
         childResourceDO.setId("mock resource child id");
         childResourceDO.setParentId("mock resource parent id");
         childResourceDO.setDateCreated(new Timestamp(System.currentTimeMillis()));
         childResourceDO.setDateUpdated(new Timestamp(System.currentTimeMillis()));
-
-        List<ResourceDO> resources = newArrayList(resourceDO, childResourceDO);
-        List<String> deleteResourceIds = newArrayList("mock resource parent id", "mock resource child id");
-
+        
+        final List<ResourceDO> resources = newArrayList(resourceDO, childResourceDO);
+        final List<String> deleteResourceIds = newArrayList("mock resource parent id", "mock resource child id");
+        
         reset(resourceMapper);
+        reset(publisher);
         when(resourceMapper.selectAll()).thenReturn(resources);
         when(resourceMapper.delete(deleteResourceIds)).thenReturn(2);
         assertThat(resourceService.delete(deleteResourceIds), equalTo(2));
     }
-
+    
     @Test
     public void testSelectById() {
         final String mockResourceId = "mock resource id";
@@ -117,12 +148,12 @@ public class ResourceServiceTest {
         resourceDO.setParentId("mock resource parent id");
         resourceDO.setDateCreated(new Timestamp(System.currentTimeMillis()));
         resourceDO.setDateUpdated(new Timestamp(System.currentTimeMillis()));
-
+        
         reset(resourceMapper);
         when(resourceMapper.selectById(mockResourceId)).thenReturn(resourceDO);
         assertThat(resourceService.findById(mockResourceId), equalTo(ResourceVO.buildResourceVO(resourceDO)));
     }
-
+    
     @Test
     public void testSelectByTitle() {
         final String mockResourceTitle = "mock resource title";
@@ -132,12 +163,12 @@ public class ResourceServiceTest {
         resourceDO.setTitle(mockResourceTitle);
         resourceDO.setDateCreated(new Timestamp(System.currentTimeMillis()));
         resourceDO.setDateUpdated(new Timestamp(System.currentTimeMillis()));
-
+        
         reset(resourceMapper);
         when(resourceMapper.selectByTitle(mockResourceTitle)).thenReturn(resourceDO);
         assertThat(resourceService.findByTitle(mockResourceTitle), equalTo(ResourceVO.buildResourceVO(resourceDO)));
     }
-
+    
     @Test
     public void testListByPage() {
         final String queryTitle = "mock query title";
@@ -154,20 +185,21 @@ public class ResourceServiceTest {
         CommonPager<ResourceVO> commonPager = resourceService.listByPage(query);
         assertThat(commonPager.getDataList().size(), is(resourceList.size()));
     }
-
+    
     @Test
     public void testGetMenuTreeWhenTheresNoResource() {
         reset(resourceMapper);
         when(resourceMapper.selectAll()).thenReturn(Collections.emptyList());
         assertNull(resourceService.getMenuTree());
     }
-
+    
     @Test
     public void testGetMenuTreeWhenThereAreResources() {
         ResourceDO parentResource = new ResourceDO();
         parentResource.setId("mock parent resource id");
         parentResource.setParentId("mock resource parent id");
         parentResource.setTitle("mock parent resource title");
+        parentResource.setIsLeaf(false);
         parentResource.setResourceType(ResourceTypeConstants.MENU_TYPE_2);
         parentResource.setDateCreated(new Timestamp(System.currentTimeMillis()));
         parentResource.setDateUpdated(new Timestamp(System.currentTimeMillis()));
@@ -175,6 +207,7 @@ public class ResourceServiceTest {
         childResource1.setId("mock child resource1 id");
         childResource1.setParentId("mock parent resource id");
         childResource1.setTitle("mock parent resource1 title");
+        childResource1.setIsLeaf(true);
         childResource1.setResourceType(ResourceTypeConstants.MENU_TYPE_2);
         childResource1.setDateCreated(new Timestamp(System.currentTimeMillis()));
         childResource1.setDateUpdated(new Timestamp(System.currentTimeMillis()));
@@ -182,19 +215,19 @@ public class ResourceServiceTest {
         childResource2.setId("mock child resource2 id");
         childResource2.setParentId("mock parent resource id");
         childResource2.setTitle("mock parent resource2 title");
+        childResource2.setIsLeaf(true);
         childResource2.setResourceType(ResourceTypeConstants.MENU_TYPE_2);
         childResource2.setDateCreated(new Timestamp(System.currentTimeMillis()));
         childResource2.setDateUpdated(new Timestamp(System.currentTimeMillis()));
         final List<ResourceDO> mockSelectAllResult = newArrayList(parentResource, childResource1, childResource2);
-
+        
         reset(resourceMapper);
         when(resourceMapper.selectAll()).thenReturn(mockSelectAllResult);
-
-        List<PermissionMenuVO.MenuInfo> menuInfoList = new ArrayList<>();
-        resourceService.getMenuInfo(menuInfoList, mockSelectAllResult.stream().map(ResourceVO::buildResourceVO).collect(Collectors.toList()), null);
+        
+        List<PermissionMenuVO.MenuInfo> menuInfoList = ResourceUtil.buildMenu(mockSelectAllResult.stream().map(ResourceVO::buildResourceVO).collect(Collectors.toList()));
         assertThat(resourceService.getMenuTree(), equalTo(menuInfoList));
     }
-
+    
     @Test
     public void testFindByParentId() {
         final String mockParentResourceId = "mock resource parent id";
@@ -205,53 +238,51 @@ public class ResourceServiceTest {
         mockResource.setResourceType(AdminResourceEnum.THREE_MENU.getCode());
         mockResource.setDateCreated(new Timestamp(System.currentTimeMillis()));
         mockResource.setDateUpdated(new Timestamp(System.currentTimeMillis()));
-
+        
         final List<ResourceDO> mockSelectByParentIdResult = newArrayList(mockResource);
-
+        
         reset(resourceMapper);
         when(resourceMapper.selectByParentId(mockParentResourceId)).thenReturn(mockSelectByParentIdResult);
-
+        
         final List<ResourceVO> expect = mockSelectByParentIdResult.stream()
                 .filter(item -> item.getResourceType().equals(AdminResourceEnum.THREE_MENU.getCode()))
                 .map(ResourceVO::buildResourceVO)
                 .collect(Collectors.toList());
         assertThat(resourceService.findByParentId(mockParentResourceId), equalTo(expect));
     }
-
+    
     @Test
     public void testGetMenuInfoWithGivingEmptyOrJustContainsNullResourceVoListItShouldNotAppendMenuInfoIntoResult() {
-        final List<PermissionMenuVO.MenuInfo> expect = newArrayList();
-        resourceService.getMenuInfo(expect, Collections.emptyList(), null);
+        final List<PermissionMenuVO.MenuInfo> expect = ResourceUtil.buildMenu(Collections.emptyList());
         assertThat(expect, equalTo(newArrayList()));
     }
-
+    
     @Test
     public void testGetMenuInfoCodeCoverage() {
         ResourceVO nullMenuInfoResource = new ResourceVO();
         nullMenuInfoResource.setResourceType(ResourceTypeConstants.MENU_TYPE_2);
         nullMenuInfoResource.setIsLeaf(false);
-
+        
         ResourceVO mockParentResource = new ResourceVO();
         mockParentResource.setId("mock parent");
         mockParentResource.setResourceType(AdminResourceEnum.SECOND_MENU.getCode());
         mockParentResource.setIsLeaf(false);
-
+        
         ResourceVO mockSecondLevelResource = new ResourceVO();
         mockSecondLevelResource.setId("mock 2nd");
         mockSecondLevelResource.setParentId("mock parent");
         mockSecondLevelResource.setResourceType(AdminResourceEnum.SECOND_MENU.getCode());
         mockSecondLevelResource.setIsLeaf(false);
-
+        
         ResourceVO mockThirdLevelResource = new ResourceVO();
         mockThirdLevelResource.setId("mock 3nd");
         mockThirdLevelResource.setParentId("mock 2nd");
         mockThirdLevelResource.setResourceType(AdminResourceEnum.SECOND_MENU.getCode());
         mockThirdLevelResource.setIsLeaf(true);
-
-        final List<PermissionMenuVO.MenuInfo> actual = newArrayList();
+        
         final List<ResourceVO> resourceParam = newArrayList(nullMenuInfoResource, mockParentResource, mockSecondLevelResource, mockThirdLevelResource);
-        resourceService.getMenuInfo(actual, resourceParam, null);
-
+        final List<PermissionMenuVO.MenuInfo> actual = ResourceUtil.buildMenu(resourceParam);
+        
         PermissionMenuVO.MenuInfo parentMenuInfo = PermissionMenuVO.MenuInfo.buildMenuInfo(mockParentResource);
         PermissionMenuVO.MenuInfo secondMenuInfo = PermissionMenuVO.MenuInfo.buildMenuInfo(mockSecondLevelResource);
         PermissionMenuVO.MenuInfo thirdMenuInfo = PermissionMenuVO.MenuInfo.buildMenuInfo(mockThirdLevelResource);

@@ -17,8 +17,9 @@
 
 package org.apache.shenyu.plugin.response.strategy;
 
+import com.google.common.collect.Lists;
 import org.apache.shenyu.common.constant.Constants;
-import org.apache.shenyu.common.utils.JsonUtils;
+import org.apache.shenyu.common.enums.RpcTypeEnum;
 import org.apache.shenyu.plugin.api.ShenyuPluginChain;
 import org.apache.shenyu.plugin.api.result.ShenyuResultEnum;
 import org.apache.shenyu.plugin.api.result.ShenyuResultWrap;
@@ -26,6 +27,7 @@ import org.apache.shenyu.plugin.api.utils.WebFluxResultUtils;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -38,11 +40,16 @@ public class RPCMessageWriter implements MessageWriter {
         return chain.execute(exchange).then(Mono.defer(() -> {
             Object result = exchange.getAttribute(Constants.RPC_RESULT);
             if (Objects.isNull(result)) {
-                Object error = ShenyuResultWrap.error(ShenyuResultEnum.SERVICE_RESULT_ERROR.getCode(), ShenyuResultEnum.SERVICE_RESULT_ERROR.getMsg(), null);
+                Object error = ShenyuResultWrap.error(exchange, ShenyuResultEnum.SERVICE_RESULT_ERROR);
                 return WebFluxResultUtils.result(exchange, error);
             }
-            Object success = ShenyuResultWrap.success(ShenyuResultEnum.SUCCESS.getCode(), ShenyuResultEnum.SUCCESS.getMsg(), JsonUtils.removeClass(result));
-            return WebFluxResultUtils.result(exchange, success);
+            return WebFluxResultUtils.result(exchange, result);
         }));
+    }
+    
+    @Override
+    public List<String> supportTypes() {
+        return Lists.newArrayList(RpcTypeEnum.DUBBO.getName(), RpcTypeEnum.SOFA.getName(), 
+                RpcTypeEnum.GRPC.getName(), RpcTypeEnum.MOTAN.getName(), RpcTypeEnum.TARS.getName());
     }
 }

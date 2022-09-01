@@ -17,6 +17,8 @@
 
 package org.apache.shenyu.plugin.apache.dubbo;
 
+import com.google.common.collect.Maps;
+import org.apache.dubbo.rpc.RpcContext;
 import org.apache.shenyu.common.constant.Constants;
 import org.apache.shenyu.common.dto.MetaData;
 import org.apache.shenyu.common.dto.RuleData;
@@ -26,25 +28,31 @@ import org.apache.shenyu.common.enums.RpcTypeEnum;
 import org.apache.shenyu.plugin.apache.dubbo.proxy.ApacheDubboProxyService;
 import org.apache.shenyu.plugin.api.ShenyuPluginChain;
 import org.apache.shenyu.plugin.api.context.ShenyuContext;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.test.StepVerifier;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
  * The Test Case For ApachDubboPlugin.
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public final class ApacheDubboPluginTest {
 
     private ApacheDubboPlugin apacheDubboPlugin;
@@ -56,7 +64,7 @@ public final class ApacheDubboPluginTest {
     @Mock
     private ShenyuPluginChain chain;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         exchange = MockServerWebExchange.from(MockServerHttpRequest.get("localhost").build());
         metaData = new MetaData();
@@ -70,7 +78,7 @@ public final class ApacheDubboPluginTest {
         apacheDubboPlugin = new ApacheDubboPlugin(apacheDubboProxyService);
     }
 
-    @Test(expected = NullPointerException.class)
+    @Test
     public void doExecute() {
         ShenyuContext context = mock(ShenyuContext.class);
         exchange.getAttributes().put(Constants.CONTEXT, context);
@@ -78,10 +86,12 @@ public final class ApacheDubboPluginTest {
         exchange.getAttributes().put(Constants.META_DATA, metaData);
         SelectorData selectorData = mock(SelectorData.class);
         RuleData data = mock(RuleData.class);
-        StepVerifier.create(apacheDubboPlugin.doExecute(exchange, chain, selectorData, data)).expectSubscription().verifyComplete();
+        assertThrows(NullPointerException.class, () -> {
+            StepVerifier.create(apacheDubboPlugin.doExecute(exchange, chain, selectorData, data)).expectSubscription().verifyComplete();
+        });
     }
 
-    @Test(expected = NullPointerException.class)
+    @Test
     public void testParameterNotNullExecute() {
         ShenyuContext context = mock(ShenyuContext.class);
         exchange.getAttributes().put(Constants.CONTEXT, context);
@@ -89,10 +99,12 @@ public final class ApacheDubboPluginTest {
         exchange.getAttributes().put(Constants.META_DATA, metaData);
         SelectorData selectorData = mock(SelectorData.class);
         RuleData data = mock(RuleData.class);
-        StepVerifier.create(apacheDubboPlugin.doExecute(exchange, chain, selectorData, data)).expectSubscription().verifyComplete();
+        assertThrows(NullPointerException.class, () -> {
+            StepVerifier.create(apacheDubboPlugin.doExecute(exchange, chain, selectorData, data)).expectSubscription().verifyComplete();
+        });
     }
 
-    @Test(expected = NullPointerException.class)
+    @Test
     public void testMethodIsNullExecute() {
         ShenyuContext context = mock(ShenyuContext.class);
         exchange.getAttributes().put(Constants.CONTEXT, context);
@@ -107,7 +119,9 @@ public final class ApacheDubboPluginTest {
         exchange.getAttributes().put(Constants.META_DATA, metaData);
         SelectorData selectorData = mock(SelectorData.class);
         RuleData data = mock(RuleData.class);
-        StepVerifier.create(apacheDubboPlugin.doExecute(exchange, chain, selectorData, data)).expectSubscription().verifyComplete();
+        assertThrows(NullPointerException.class, () -> {
+            StepVerifier.create(apacheDubboPlugin.doExecute(exchange, chain, selectorData, data)).expectSubscription().verifyComplete();
+        });
     }
 
     @Test
@@ -131,5 +145,13 @@ public final class ApacheDubboPluginTest {
     public void getOrder() {
         final int result = apacheDubboPlugin.getOrder();
         assertEquals(PluginEnum.DUBBO.getCode(), result);
+    }
+
+    @Test
+    public void testTransmitRpcContext() {
+        Map<String, String> stringStringMap = Maps.newHashMapWithExpectedSize(1);
+        stringStringMap.put("test", "test");
+        apacheDubboPlugin.transmitRpcContext(stringStringMap);
+        assertEquals(RpcContext.getContext().getAttachment("test"), "test");
     }
 }

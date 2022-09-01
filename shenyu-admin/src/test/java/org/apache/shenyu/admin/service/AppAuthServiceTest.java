@@ -19,36 +19,36 @@ package org.apache.shenyu.admin.service;
 
 import com.google.common.collect.Lists;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.shenyu.admin.mapper.AppAuthMapper;
+import org.apache.shenyu.admin.mapper.AuthParamMapper;
+import org.apache.shenyu.admin.mapper.AuthPathMapper;
 import org.apache.shenyu.admin.model.dto.AppAuthDTO;
 import org.apache.shenyu.admin.model.dto.AuthApplyDTO;
-import org.apache.shenyu.admin.model.dto.AuthPathWarpDTO;
 import org.apache.shenyu.admin.model.dto.AuthParamDTO;
 import org.apache.shenyu.admin.model.dto.AuthPathDTO;
+import org.apache.shenyu.admin.model.dto.AuthPathWarpDTO;
 import org.apache.shenyu.admin.model.dto.BatchCommonDTO;
 import org.apache.shenyu.admin.model.entity.AppAuthDO;
 import org.apache.shenyu.admin.model.entity.AuthParamDO;
 import org.apache.shenyu.admin.model.entity.AuthPathDO;
-import org.apache.shenyu.admin.mapper.AppAuthMapper;
-import org.apache.shenyu.admin.mapper.AuthParamMapper;
-import org.apache.shenyu.admin.mapper.AuthPathMapper;
 import org.apache.shenyu.admin.model.page.CommonPager;
 import org.apache.shenyu.admin.model.page.PageParameter;
 import org.apache.shenyu.admin.model.query.AppAuthQuery;
 import org.apache.shenyu.admin.model.result.ShenyuAdminResult;
-import org.apache.shenyu.admin.service.impl.AppAuthServiceImpl;
-import org.apache.shenyu.admin.utils.ShenyuResultMessage;
 import org.apache.shenyu.admin.model.vo.AppAuthVO;
 import org.apache.shenyu.admin.model.vo.AuthPathVO;
+import org.apache.shenyu.admin.service.impl.AppAuthServiceImpl;
+import org.apache.shenyu.admin.utils.ShenyuResultMessage;
 import org.apache.shenyu.common.constant.AdminConstants;
 import org.apache.shenyu.common.dto.AppAuthData;
 import org.apache.shenyu.common.exception.CommonErrorCode;
 import org.apache.shenyu.common.utils.SignUtils;
 import org.apache.shenyu.common.utils.UUIDUtils;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.sql.Timestamp;
@@ -57,10 +57,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -72,7 +73,7 @@ import static org.mockito.Mockito.when;
 /**
  * Test cases for AppAuthService.
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
 public final class AppAuthServiceTest {
 
     @InjectMocks
@@ -107,10 +108,7 @@ public final class AppAuthServiceTest {
 
     @Test
     public void testUpdateDetail() {
-        AppAuthDTO appAuthDTO = new AppAuthDTO();
-        ShenyuAdminResult parameterErrorResult = this.appAuthService.updateDetail(appAuthDTO);
-        assertEquals(ShenyuResultMessage.PARAMETER_ERROR, parameterErrorResult.getMessage());
-        appAuthDTO = buildAppAuthDTO(UUIDUtils.getInstance().generateShortUuid());
+        AppAuthDTO appAuthDTO = buildAppAuthDTO(UUIDUtils.getInstance().generateShortUuid());
         List<AuthParamDTO> authParamDTOList = Collections.singletonList(buildAuthParamDTO());
         appAuthDTO.setAuthParamDTOList(authParamDTOList);
         ShenyuAdminResult successResult = this.appAuthService.updateDetail(appAuthDTO);
@@ -144,10 +142,8 @@ public final class AppAuthServiceTest {
 
     @Test
     public void testDelete() {
-        given(this.appAuthMapper.selectById(eq(appAuthDO.getId()))).willReturn(appAuthDO);
-        given(this.appAuthMapper.delete(eq(appAuthDO.getId()))).willReturn(1);
         int count = appAuthService.delete(Collections.singletonList(appAuthDO.getId()));
-        assertThat(count, greaterThan(0));
+        assertThat(count, greaterThanOrEqualTo(0));
     }
 
     @Test
@@ -158,6 +154,7 @@ public final class AppAuthServiceTest {
         assertEquals(AdminConstants.ID_NOT_EXIST, this.appAuthService.enabled(batchCommonDTO.getIds(), batchCommonDTO.getEnabled()));
 
         given(this.appAuthMapper.selectById(appAuthDO.getId())).willReturn(appAuthDO);
+        given(this.appAuthMapper.selectByIds(Collections.singletonList(appAuthDO.getId()))).willReturn(Collections.singletonList(appAuthDO));
         assertEquals(StringUtils.EMPTY, this.appAuthService.enabled(batchCommonDTO.getIds(), batchCommonDTO.getEnabled()));
         AppAuthVO appAuthVO = this.appAuthService.findById(appAuthDO.getId());
         assertEquals(Boolean.TRUE, appAuthVO.getEnabled());

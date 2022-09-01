@@ -36,24 +36,33 @@ import java.util.concurrent.TimeUnit;
 @Configuration
 public class HttpServerConfig {
 
+    /**
+     * define a bean with name monoRouterFunction for test.
+     * @param shenyuTestHttpRouter shenyuTestHttpRouter
+     * @return route functions
+     */
     @Bean
     public RouterFunction<ServerResponse> monoRouterFunction(final ShenyuTestHttpRouter shenyuTestHttpRouter) {
         return shenyuTestHttpRouter.routes();
     }
 
+    /**
+     * define scheduler bean.
+     * @return Scheduler bean.
+     */
     @Bean
     public Scheduler scheduler() {
         ExecutorService threadPool = new ThreadPoolExecutor(100, 100,
-                0L, TimeUnit.MILLISECONDS,
-                new LinkedBlockingQueue<>(),
-                runnable -> {
-                    Thread thread = new Thread(runnable, "http-exe");
-                    thread.setDaemon(false);
-                    if (thread.getPriority() != Thread.NORM_PRIORITY) {
-                        thread.setPriority(Thread.NORM_PRIORITY);
-                    }
-                    return thread;
-                });
+            0L, TimeUnit.MILLISECONDS,
+            new LinkedBlockingQueue<>(),
+            runnable -> {
+                Thread thread = new Thread(runnable, "http-exe");
+                thread.setDaemon(false);
+                if (thread.getPriority() != Thread.NORM_PRIORITY) {
+                    thread.setPriority(Thread.NORM_PRIORITY);
+                }
+                return thread;
+            });
         return Schedulers.fromExecutor(threadPool);
     }
 }

@@ -17,66 +17,103 @@
 
 package org.apache.shenyu.admin.service.register;
 
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.shenyu.admin.model.entity.MetaDataDO;
+import org.apache.shenyu.admin.model.entity.SelectorDO;
 import org.apache.shenyu.admin.service.MetaDataService;
-import org.apache.shenyu.admin.service.PluginService;
-import org.apache.shenyu.admin.service.RuleService;
-import org.apache.shenyu.admin.service.SelectorService;
-import org.apache.shenyu.admin.utils.ShenyuResultMessage;
-import org.apache.shenyu.common.enums.PluginEnum;
+import org.apache.shenyu.admin.service.converter.DubboSelectorHandleConverter;
+import org.apache.shenyu.admin.utils.CommonUpstreamUtils;
+import org.apache.shenyu.common.dto.convert.rule.impl.DubboRuleHandle;
+import org.apache.shenyu.common.dto.convert.selector.DubboUpstream;
+import org.apache.shenyu.common.enums.RpcTypeEnum;
+import org.apache.shenyu.common.utils.GsonUtils;
 import org.apache.shenyu.register.common.dto.MetaDataRegisterDTO;
+import org.apache.shenyu.register.common.dto.URIRegisterDTO;
+import org.apache.shenyu.register.common.enums.EventType;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Objects;
+import javax.annotation.Resource;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.Collectors;
 
 /**
  * dubbo service register.
  */
-@Service("dubbo")
+@Service
 public class ShenyuClientRegisterDubboServiceImpl extends AbstractShenyuClientRegisterServiceImpl {
 
-    private final MetaDataService metaDataService;
+    @Resource
+    private DubboSelectorHandleConverter dubboSelectorHandleConverter;
 
-    private final SelectorService selectorService;
-
-    private final PluginService pluginService;
-
-    private final RuleService ruleService;
-
-    public ShenyuClientRegisterDubboServiceImpl(final MetaDataService metaDataService,
-                                                final SelectorService selectorService,
-                                                final RuleService ruleService,
-                                                final PluginService pluginService) {
-        this.metaDataService = metaDataService;
-        this.selectorService = selectorService;
-        this.ruleService = ruleService;
-        this.pluginService = pluginService;
+    @Override
+    public String rpcType() {
+        return RpcTypeEnum.DUBBO.getName();
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
-    public String register(final MetaDataRegisterDTO dto) {
-        MetaDataDO exist = metaDataService.findByPath(dto.getPath());
-        saveOrUpdateMetaData(exist, dto);
-        String selectorId = handlerSelector(dto);
-        handlerRule(selectorId, dto, exist);
-        return ShenyuResultMessage.SUCCESS;
+    protected String selectorHandler(final MetaDataRegisterDTO metaDataDTO) {
+        return "";
     }
 
     @Override
-    public void saveOrUpdateMetaData(final MetaDataDO exist, final MetaDataRegisterDTO metaDataDTO) {
+    protected String ruleHandler() {
+        return new DubboRuleHandle().toJson();
+    }
+
+    @Override
+    protected void registerMetadata(final MetaDataRegisterDTO metaDataDTO) {
+        MetaDataService metaDataService = getMetaDataService();
+        MetaDataDO exist = metaDataService.findByPath(metaDataDTO.getPath());
         metaDataService.saveOrUpdateMetaData(exist, metaDataDTO);
     }
 
     @Override
-    public String handlerSelector(final MetaDataRegisterDTO metaDataDTO) {
-        return selectorService.handlerSelectorNeedUpstreamCheck(metaDataDTO, PluginEnum.DUBBO.getName());
+    protected String buildHandle(final List<URIRegisterDTO> uriList, final SelectorDO selectorDO) {
+        List<DubboUpstream> addList = buildDubboUpstreamList(uriList);
+        List<DubboUpstream> canAddList = new CopyOnWriteArrayList<>();
+        boolean isEventDeleted = uriList.size() == 1 && EventType.DELETED.equals(uriList.get(0).getEventType());
+        if (isEventDeleted) {
+            addList.get(0).setStatus(false);
+        }
+        List<DubboUpstream> existList = GsonUtils.getInstance().fromCurrentList(selectorDO.getHandle(), DubboUpstream.class);
+        if (CollectionUtils.isEmpty(existList)) {
+            canAddList = addList;
+        } else {
+            List<DubboUpstream> diffList = addList.stream().filter(upstream -> !existList.contains(upstream)).collect(Collectors.toList());
+            if (CollectionUtils.isNotEmpty(diffList)) {
+                canAddList.addAll(diffList);
+                existList.addAll(diffList);
+            }
+            List<DubboUpstream> diffStatusList = addList.stream().filter(upstream -> !upstream.isStatus()
+                    || existList.stream().anyMatch(e -> e.equals(upstream) && e.isStatus() != upstream.isStatus())).collect(Collectors.toList());
+            if (CollectionUtils.isNotEmpty(diffStatusList)) {
+                canAddList.addAll(diffStatusList);
+            }
+        }
+
+        if (doSubmit(selectorDO.getId(), canAddList)) {
+            return null;
+        }
+
+        List<DubboUpstream> handleList;
+        if (CollectionUtils.isEmpty(existList)) {
+            handleList = addList;
+        } else {
+            List<DubboUpstream> aliveList;
+            if (isEventDeleted) {
+                aliveList = existList.stream().filter(e -> e.isStatus() && !e.equals(addList.get(0))).collect(Collectors.toList());
+            } else {
+                aliveList = addList;
+            }
+            handleList = dubboSelectorHandleConverter.updateStatusAndFilter(existList, aliveList);
+        }
+        return GsonUtils.getInstance().toJson(handleList);
     }
 
-    @Override
-    public void handlerRule(final String selectorId, final MetaDataRegisterDTO metaDataDTO, final MetaDataDO exist) {
-        ruleService.register(registerRule(selectorId, metaDataDTO, PluginEnum.DUBBO.getName()),
-                metaDataDTO.getPath(), Objects.nonNull(exist));
+    private List<DubboUpstream> buildDubboUpstreamList(final List<URIRegisterDTO> uriList) {
+        return uriList.stream()
+                .map(dto -> CommonUpstreamUtils.buildDefaultDubboUpstream(dto.getHost(), dto.getPort()))
+                .collect(Collectors.toCollection(CopyOnWriteArrayList::new));
     }
 }
