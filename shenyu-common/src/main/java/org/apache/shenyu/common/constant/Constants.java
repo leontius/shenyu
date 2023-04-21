@@ -83,6 +83,11 @@ public interface Constants {
     String MOTAN_RPC_RESULT_EMPTY = "motan has not return value!";
 
     /**
+     * The constant BRPC_RPC_RESULT_EMPTY.
+     */
+    String BRPC_RPC_RESULT_EMPTY = "brpc has not return value!";
+
+    /**
      * The constant CLIENT_RESPONSE_RESULT_TYPE.
      */
     String CLIENT_RESPONSE_RESULT_TYPE = "webHandlerClientResponseResultType";
@@ -148,6 +153,16 @@ public interface Constants {
     String MODULE = "module";
 
     /**
+     * RESPONSE_MONO.
+     */
+    String RESPONSE_MONO = "RESPONSE_MONO";
+
+    /**
+     * WATCHER_HTTP_STATUS.
+     */
+    String WATCHER_HTTP_STATUS = "WATCHER_HTTP_STATUS";
+
+    /**
      * The constant METHOD.
      */
     String METHOD = "method";
@@ -181,6 +196,11 @@ public interface Constants {
      * The constant SIGN_PARAMS_ERROR.
      */
     String SIGN_PARAMS_ERROR = "sign parameters are incomplete!";
+
+    /**
+     * The constant SIGN_VERSION_ERROR.
+     */
+    String SIGN_VERSION_ERROR = "sign version does not exist or is wrong!";
 
     /**
      * The constant SIGN_APP_KEY_IS_NOT_EXIST.
@@ -418,6 +438,16 @@ public interface Constants {
     String DEFAULT_CHECK_VALUE = "false";
 
     /**
+     * zombie check threads.
+     */
+    String ZOMBIE_CHECK_THREADS = "zombieCheckThreads";
+
+    /**
+     * default zombie check threads value.
+     */
+    String ZOMBIE_CHECK_THREADS_VALUE = "10";
+
+    /**
      * zombie check times.
      */
     String ZOMBIE_CHECK_TIMES = "zombieCheckTimes";
@@ -527,6 +557,11 @@ public interface Constants {
      */
     String URI_PATH = "/shenyu-client/register-uri";
 
+
+    String API_DOC_TYPE = "apiDoc";
+
+    String API_DOC_PATH = "/shenyu-client/register-apiDoc";
+
     /**
      * When register by http, the login path.
      */
@@ -628,9 +663,34 @@ public interface Constants {
     String CACHED = "cached";
 
     /**
+     * user can use the specify-domian to replace of upstream url of the divide plugin.
+     */
+    String SPECIFY_DOMAIN = "specify-domain";
+    
+    /**
      * The maximum free memory reserved by the blocking queue for the JVM.
      */
     int THE_256_MB = 256 * 1024 * 1024;
+
+    /**
+     * The default cluster of dubbo client.
+     */
+    String DEFAULT_CLUSTER = "failover";
+
+    /**
+     * cache data max size, means map size.
+     */
+    Long LRU_MAP_MAXSIZE = 65536L;
+
+    /**
+     * namespace,sush as nacos .
+     */
+    String NAMESPACE = "namespace";
+
+    /**
+     * brpc  spi bizThreadPoolName.
+     */
+    String SHARED_BIZTHREADPOOLNAME = "shared";
 
     /**
      * String q.

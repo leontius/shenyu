@@ -18,12 +18,18 @@
 package org.apache.shenyu.plugin.base.cache;
 
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.shenyu.common.config.ShenyuConfig.ShenyuTrieConfig;
 import org.apache.shenyu.common.dto.PluginData;
 import org.apache.shenyu.common.dto.RuleData;
 import org.apache.shenyu.common.dto.SelectorData;
 import org.apache.shenyu.common.enums.DataEventTypeEnum;
 import org.apache.shenyu.common.enums.PluginHandlerEventEnum;
+import org.apache.shenyu.common.enums.RuleTrieEventEnum;
+import org.apache.shenyu.common.utils.MapUtils;
+import org.apache.shenyu.plugin.api.utils.SpringBeanUtils;
+import org.apache.shenyu.plugin.base.event.RuleTrieEvent;
 import org.apache.shenyu.plugin.base.handler.PluginDataHandler;
+import org.apache.shenyu.plugin.base.trie.ShenyuTrie;
 import org.apache.shenyu.sync.data.api.PluginDataSubscriber;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,14 +52,18 @@ public class CommonPluginDataSubscriber implements PluginDataSubscriber {
     private final Map<String, PluginDataHandler> handlerMap;
 
     private ApplicationEventPublisher eventPublisher;
+    
+    private final ShenyuTrieConfig shenyuTrieConfig;
 
     /**
      * Instantiates a new Common plugin data subscriber.
      *
      * @param pluginDataHandlerList the plugin data handler list
+     * @param shenyuTrieConfig shenyu trie config
      */
-    public CommonPluginDataSubscriber(final List<PluginDataHandler> pluginDataHandlerList) {
+    public CommonPluginDataSubscriber(final List<PluginDataHandler> pluginDataHandlerList, final ShenyuTrieConfig shenyuTrieConfig) {
         this.handlerMap = pluginDataHandlerList.stream().collect(Collectors.toConcurrentMap(PluginDataHandler::pluginNamed, e -> e));
+        this.shenyuTrieConfig = shenyuTrieConfig;
     }
 
     /**
@@ -61,11 +71,14 @@ public class CommonPluginDataSubscriber implements PluginDataSubscriber {
      *
      * @param pluginDataHandlerList the plugin data handler list
      * @param eventPublisher        eventPublisher is used to publish sort plugin event
+     * @param shenyuTrieConfig      shenyu trie config
      */
     public CommonPluginDataSubscriber(final List<PluginDataHandler> pluginDataHandlerList,
-                                      final ApplicationEventPublisher eventPublisher) {
+                                      final ApplicationEventPublisher eventPublisher,
+                                      final ShenyuTrieConfig shenyuTrieConfig) {
         this.handlerMap = pluginDataHandlerList.stream().collect(Collectors.toConcurrentMap(PluginDataHandler::pluginNamed, e -> e));
         this.eventPublisher = eventPublisher;
+        this.shenyuTrieConfig = shenyuTrieConfig;
     }
 
     /**
@@ -79,7 +92,7 @@ public class CommonPluginDataSubscriber implements PluginDataSubscriber {
         }
         for (PluginDataHandler handler : handlers) {
             String pluginNamed = handler.pluginNamed();
-            handlerMap.computeIfAbsent(pluginNamed, name -> {
+            MapUtils.computeIfAbsent(handlerMap, pluginNamed, name -> {
                 LOG.info("shenyu auto add extends plugin data handler name is :{}", pluginNamed);
                 return handler;
             });
@@ -146,6 +159,8 @@ public class CommonPluginDataSubscriber implements PluginDataSubscriber {
     @Override
     public void refreshRuleDataAll() {
         BaseDataCache.getInstance().cleanRuleData();
+        MatchDataCache.getInstance().cleanRuleDataData();
+        SpringBeanUtils.getInstance().getBean(ShenyuTrie.class).clear();
     }
     
     @Override
@@ -199,7 +214,20 @@ public class CommonPluginDataSubscriber implements PluginDataSubscriber {
             BaseDataCache.getInstance().cacheRuleData(ruleData);
             Optional.ofNullable(handlerMap.get(ruleData.getPluginName()))
                     .ifPresent(handler -> handler.handlerRule(ruleData));
-            
+            MatchDataCache.getInstance().removeRuleData(ruleData.getPluginName());
+            if (!shenyuTrieConfig.getEnabled()) {
+                return;
+            }
+            if (ruleData.getEnabled()) {
+                if (CollectionUtils.isEmpty(ruleData.getBeforeConditionDataList())) {
+                    eventPublisher.publishEvent(new RuleTrieEvent(RuleTrieEventEnum.INSERT, ruleData));
+                } else {
+                    // if rule data has before condition, update trie
+                    eventPublisher.publishEvent(new RuleTrieEvent(RuleTrieEventEnum.UPDATE, ruleData));
+                }
+            } else {
+                eventPublisher.publishEvent(new RuleTrieEvent(RuleTrieEventEnum.REMOVE, ruleData));
+            }
         }
     }
 
@@ -244,7 +272,11 @@ public class CommonPluginDataSubscriber implements PluginDataSubscriber {
             BaseDataCache.getInstance().removeRuleData(ruleData);
             Optional.ofNullable(handlerMap.get(ruleData.getPluginName()))
                     .ifPresent(handler -> handler.removeRule(ruleData));
-            
+            MatchDataCache.getInstance().removeRuleData(ruleData.getPluginName());
+            if (!shenyuTrieConfig.getEnabled()) {
+                return;
+            }
+            eventPublisher.publishEvent(new RuleTrieEvent(RuleTrieEventEnum.REMOVE, ruleData));
         }
     }
 }

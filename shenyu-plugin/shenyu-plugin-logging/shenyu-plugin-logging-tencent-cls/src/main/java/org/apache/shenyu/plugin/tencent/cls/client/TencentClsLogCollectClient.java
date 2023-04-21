@@ -29,94 +29,70 @@ import com.tencentcloudapi.cls.producer.errors.MaxBatchCountExceedException;
 import com.tencentcloudapi.cls.producer.errors.ProducerException;
 import com.tencentcloudapi.cls.producer.errors.ResultFailedException;
 import com.tencentcloudapi.cls.producer.util.NetworkUtils;
-import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.shenyu.common.concurrent.ShenyuThreadFactory;
 import org.apache.shenyu.common.utils.GsonUtils;
-import org.apache.shenyu.plugin.logging.common.client.LogConsumeClient;
+import org.apache.shenyu.plugin.logging.common.client.AbstractLogConsumeClient;
 import org.apache.shenyu.plugin.logging.common.constant.GenericLoggingConstant;
 import org.apache.shenyu.plugin.logging.common.entity.ShenyuRequestLog;
+import org.apache.shenyu.plugin.tencent.cls.config.TencentLogCollectConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.NonNull;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Properties;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Tencent cls log Collect client.
  */
-public class TencentClsLogCollectClient implements LogConsumeClient {
-
-    private static final Logger LOG = LoggerFactory.getLogger(TencentClsLogCollectClient.class);
+public class TencentClsLogCollectClient extends AbstractLogConsumeClient<TencentLogCollectConfig.TencentClsLogConfig, ShenyuRequestLog> {
 
     private AsyncProducerClient client;
 
     private String topic;
-
-    private final AtomicBoolean isStarted = new AtomicBoolean(false);
 
     private ThreadPoolExecutor threadExecutor;
 
     /**
      * init Tencent cls client.
      *
-     * @param props props
+     * @param tencentClsLogConfig shenyu log config
      */
-    public void initClient(final Properties props) {
-        if (MapUtils.isEmpty(props)) {
-            LOG.error("Tencent cls props is empty. failed init Tencent cls producer");
-            return;
-        }
-        if (isStarted.get()) {
-            close();
-        }
-        String secretId = props.getProperty(GenericLoggingConstant.SECRET_ID);
-        String secretKey = props.getProperty(GenericLoggingConstant.SECRET_KEY);
-        String endpoint = props.getProperty(GenericLoggingConstant.ENDPOINT);
-        topic = props.getProperty(GenericLoggingConstant.TOPIC);
+    @Override
+    public void initClient0(@NonNull final TencentLogCollectConfig.TencentClsLogConfig tencentClsLogConfig) {
+        String secretId = tencentClsLogConfig.getSecretId();
+        String secretKey = tencentClsLogConfig.getSecretKey();
+        String endpoint = tencentClsLogConfig.getEndpoint();
+        this.topic = tencentClsLogConfig.getTopic();
         if (StringUtils.isBlank(secretId) || StringUtils.isBlank(secretKey) || StringUtils.isBlank(topic) || StringUtils.isBlank(endpoint)) {
             LOG.error("init Tencent cls client error, please check secretId, secretKey, topic or host");
             return;
         }
 
-        String totalSizeInBytes = props.getProperty(GenericLoggingConstant.TOTAL_SIZE_IN_BYTES);
-        String maxSendThreadCount = props.getProperty(GenericLoggingConstant.MAX_SEND_THREAD_COUNT);
-        String maxBlockSec = props.getProperty(GenericLoggingConstant.MAX_BLOCK_SEC);
-        String maxBatchSize = props.getProperty(GenericLoggingConstant.MAX_BATCH_SIZE);
-        String maxBatchCount = props.getProperty(GenericLoggingConstant.MAX_BATCH_COUNT);
-        String lingerMs = props.getProperty(GenericLoggingConstant.LINGER_MS);
-        String retries = props.getProperty(GenericLoggingConstant.RETRIES);
-        String maxReservedAttempts = props.getProperty(GenericLoggingConstant.MAX_RESERVED_ATTEMPTS);
-        String baseRetryBackoffMs = props.getProperty(GenericLoggingConstant.BASE_RETRY_BACKOFF_MS);
-        String maxRetryBackoffMs = props.getProperty(GenericLoggingConstant.MAX_RETRY_BACKOFF_MS);
         // init AsyncProducerConfig, AsyncProducerClient
         final AsyncProducerConfig config = new AsyncProducerConfig(endpoint, secretId, secretKey, NetworkUtils.getLocalMachineIP());
-
         // Optional parameters
-        Optional.ofNullable(totalSizeInBytes).map(Integer::valueOf).ifPresent(config::setTotalSizeInBytes);
-        Optional.ofNullable(maxSendThreadCount).map(Integer::valueOf).ifPresent(config::setSendThreadCount);
-        Optional.ofNullable(maxBlockSec).map(Long::valueOf).ifPresent(config::setMaxBlockMs);
-        Optional.ofNullable(maxBatchSize).map(Integer::valueOf).ifPresent(config::setBatchSizeThresholdInBytes);
-        Optional.ofNullable(maxBatchCount).map(Integer::valueOf).ifPresent(config::setBatchCountThreshold);
-        Optional.ofNullable(lingerMs).map(Integer::valueOf).ifPresent(config::setLingerMs);
-        Optional.ofNullable(retries).map(Integer::valueOf).ifPresent(config::setRetries);
-        Optional.ofNullable(maxReservedAttempts).map(Integer::valueOf).ifPresent(config::setMaxReservedAttempts);
-        Optional.ofNullable(baseRetryBackoffMs).map(Long::valueOf).ifPresent(config::setBaseRetryBackoffMs);
-        Optional.ofNullable(maxRetryBackoffMs).map(Long::valueOf).ifPresent(config::setMaxRetryBackoffMs);
+        Optional.ofNullable(tencentClsLogConfig.getTotalSizeInBytes()).map(Integer::valueOf).ifPresent(config::setTotalSizeInBytes);
+        Optional.ofNullable(tencentClsLogConfig.getMaxSendThreadCount()).map(Integer::valueOf).ifPresent(config::setSendThreadCount);
+        Optional.ofNullable(tencentClsLogConfig.getMaxBlockSec()).map(Long::valueOf).ifPresent(config::setMaxBlockMs);
+        Optional.ofNullable(tencentClsLogConfig.getMaxBatchSize()).map(Integer::valueOf).ifPresent(config::setBatchSizeThresholdInBytes);
+        Optional.ofNullable(tencentClsLogConfig.getMaxBatchCount()).map(Integer::valueOf).ifPresent(config::setBatchCountThreshold);
+        Optional.ofNullable(tencentClsLogConfig.getLingerMs()).map(Integer::valueOf).ifPresent(config::setLingerMs);
+        Optional.ofNullable(tencentClsLogConfig.getRetries()).map(Integer::valueOf).ifPresent(config::setRetries);
+        Optional.ofNullable(tencentClsLogConfig.getMaxReservedAttempts()).map(Integer::valueOf).ifPresent(config::setMaxReservedAttempts);
+        Optional.ofNullable(tencentClsLogConfig.getBaseRetryBackoffMs()).map(Long::valueOf).ifPresent(config::setBaseRetryBackoffMs);
+        Optional.ofNullable(tencentClsLogConfig.getMaxRetryBackoffMs()).map(Long::valueOf).ifPresent(config::setMaxRetryBackoffMs);
 
-        threadExecutor = createThreadPoolExecutor(props);
+        threadExecutor = createThreadPoolExecutor(tencentClsLogConfig.getSendThreadCount());
 
         try {
-            isStarted.set(true);
             client = new AsyncProducerClient(config);
         } catch (Exception e) {
             LOG.warn("TencentClsLogCollectClient initClient error message:{}", e.getMessage());
@@ -129,17 +105,13 @@ public class TencentClsLogCollectClient implements LogConsumeClient {
      * @param logs list of log
      */
     @Override
-    public void consume(final List<ShenyuRequestLog> logs) {
-        if (CollectionUtils.isEmpty(logs) || !isStarted.get()) {
-            return;
-        }
+    public void consume0(@NonNull final List<ShenyuRequestLog> logs) {
         logs.forEach(this::sendLog);
     }
 
     @Override
-    public void close() {
-        if (Objects.nonNull(client) && isStarted.get()) {
-            isStarted.set(false);
+    public void close0() {
+        if (Objects.nonNull(client)) {
             try {
                 client.close();
             } catch (InterruptedException | ProducerException e) {
@@ -179,16 +151,16 @@ public class TencentClsLogCollectClient implements LogConsumeClient {
     /**
      * create send log queue.
      *
-     * @param props props
+     * @param sendThreadCount sendThreadCount
      * @return ThreadPoolExecutor
      */
-    private static ThreadPoolExecutor createThreadPoolExecutor(final Properties props) {
-        int sendThreadCount = Integer.parseInt(props.getProperty(GenericLoggingConstant.SEND_THREAD_COUNT));
-        if (sendThreadCount > GenericLoggingConstant.MAX_ALLOW_THREADS) {
+    private static ThreadPoolExecutor createThreadPoolExecutor(final int sendThreadCount) {
+        int threadCount = sendThreadCount;
+        if (threadCount > GenericLoggingConstant.MAX_ALLOW_THREADS) {
             LOG.warn("send thread count number too large!");
-            sendThreadCount = GenericLoggingConstant.MAX_ALLOW_THREADS;
+            threadCount = GenericLoggingConstant.MAX_ALLOW_THREADS;
         }
-        return new ThreadPoolExecutor(sendThreadCount, GenericLoggingConstant.MAX_ALLOW_THREADS, 60000L, TimeUnit.MICROSECONDS,
+        return new ThreadPoolExecutor(threadCount, GenericLoggingConstant.MAX_ALLOW_THREADS, 60000L, TimeUnit.MICROSECONDS,
                 new LinkedBlockingQueue<>(GenericLoggingConstant.MAX_QUEUE_NUMBER), ShenyuThreadFactory.create("shenyu-tencent-cls", true),
                 new ThreadPoolExecutor.AbortPolicy());
     }

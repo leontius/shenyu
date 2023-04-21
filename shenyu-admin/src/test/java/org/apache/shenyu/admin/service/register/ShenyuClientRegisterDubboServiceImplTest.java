@@ -24,6 +24,7 @@ import org.apache.shenyu.admin.service.converter.DubboSelectorHandleConverter;
 import org.apache.shenyu.admin.service.impl.MetaDataServiceImpl;
 import org.apache.shenyu.admin.utils.CommonUpstreamUtils;
 import org.apache.shenyu.common.dto.convert.rule.impl.DubboRuleHandle;
+import org.apache.shenyu.common.dto.convert.selector.CommonUpstream;
 import org.apache.shenyu.common.dto.convert.selector.DivideUpstream;
 import org.apache.shenyu.common.dto.convert.selector.DubboUpstream;
 import org.apache.shenyu.common.enums.RpcTypeEnum;
@@ -31,7 +32,6 @@ import org.apache.shenyu.common.exception.ShenyuException;
 import org.apache.shenyu.common.utils.GsonUtils;
 import org.apache.shenyu.register.common.dto.MetaDataRegisterDTO;
 import org.apache.shenyu.register.common.dto.URIRegisterDTO;
-import org.apache.shenyu.register.common.enums.EventType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -41,6 +41,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
+import com.google.gson.JsonParser;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -116,7 +117,7 @@ public final class ShenyuClientRegisterDubboServiceImplTest {
         when(selectorDO.getHandle()).thenReturn(returnStr);
         doReturn(false).when(shenyuClientRegisterDubboService).doSubmit(any(), any());
         String actual = shenyuClientRegisterDubboService.buildHandle(list, selectorDO);
-        assertEquals(expected.replaceAll("\\d{13}", "0"), actual.replaceAll("\\d{13}", "0"));
+        assertEquals(JsonParser.parseString(expected.replaceAll("\\d{13}", "0")), JsonParser.parseString(actual.replaceAll("\\d{13}", "0")));
         List<DubboUpstream> resultList = GsonUtils.getInstance().fromCurrentList(actual, DubboUpstream.class);
         assertEquals(resultList.size(), 2);
 
@@ -129,7 +130,7 @@ public final class ShenyuClientRegisterDubboServiceImplTest {
         resultList = GsonUtils.getInstance().fromCurrentList(actual, DubboUpstream.class);
         assertEquals(resultList.size(), 3);
         assertEquals(resultList.stream().filter(r -> list.stream().map(dto -> CommonUpstreamUtils.buildUrl(dto.getHost(), dto.getPort()))
-                .anyMatch(url -> url.equals(r.getUpstreamUrl()))).allMatch(r -> r.isStatus()), true);
+                .anyMatch(url -> url.equals(r.getUpstreamUrl()))).allMatch(CommonUpstream::isStatus), true);
         assertEquals(resultList.stream().filter(r -> list.stream().map(dto -> CommonUpstreamUtils.buildUrl(dto.getHost(), dto.getPort()))
                 .noneMatch(url -> url.equals(r.getUpstreamUrl()))).allMatch(r -> !r.isStatus()), true);
 
@@ -142,12 +143,12 @@ public final class ShenyuClientRegisterDubboServiceImplTest {
         resultList = GsonUtils.getInstance().fromCurrentList(actual, DubboUpstream.class);
         assertEquals(resultList.size(), 2);
         assertEquals(resultList.stream().filter(r -> list.stream().map(dto -> CommonUpstreamUtils.buildUrl(dto.getHost(), dto.getPort()))
-                .anyMatch(url -> url.equals(r.getUpstreamUrl()))).allMatch(r -> r.isStatus()), true);
+                .anyMatch(url -> url.equals(r.getUpstreamUrl()))).allMatch(CommonUpstream::isStatus), true);
         assertEquals(resultList.stream().filter(r -> list.stream().map(dto -> CommonUpstreamUtils.buildUrl(dto.getHost(), dto.getPort()))
                 .noneMatch(url -> url.equals(r.getUpstreamUrl()))).allMatch(r -> !r.isStatus()), true);
 
         list.clear();
-        list.add(URIRegisterDTO.builder().protocol("http://").appName("test1").rpcType(RpcTypeEnum.DUBBO.getName()).host(LOCALHOST).port(8090).eventType(EventType.DELETED).build());
+        list.add(URIRegisterDTO.builder().protocol("http://").appName("test1").rpcType(RpcTypeEnum.DUBBO.getName()).host(LOCALHOST).port(8090)/*.eventType(EventType.DELETED)*/.build());
         doReturn(false).when(shenyuClientRegisterDubboService).doSubmit(any(), any());
         selectorDO = mock(SelectorDO.class);
         when(selectorDO.getHandle()).thenReturn(returnStr);
