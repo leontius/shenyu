@@ -15,10 +15,22 @@
  * limitations under the License.
  */
 
-package org.apache.shenyu.client.core.register.matcher;
+package org.apache.shenyu.client.auto.config;
 
-import org.apache.shenyu.client.core.register.ApiBean;
+import org.springframework.context.annotation.Import;
 
-public abstract class ApiBeanMatcher<T> implements Matcher<ApiBean<T>> {
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+/**
+ * Annotation to activate client register related configuration.
+ * {@link ClientRegisterConfiguration}
+ */
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+@Import(ClientRegisterConfiguration.class)
+public @interface EnableClientRegister {
 
 }
